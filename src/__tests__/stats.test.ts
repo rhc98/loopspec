@@ -28,6 +28,8 @@ const runA = run("aaaa1111-zzzz", [
 ]);
 
 // Run B — 부분 수렴: i1 은 2회만에 pass, i2 는 scope 위반 후 escalate.
+// scope-escalation 은 run.ts 실제 방출 순서(attempt-started → scope-violated →
+// item-escalated, attempt-completed 없음)를 그대로 따른다 → iterations/cost 미증가.
 const runB = run("bbbb2222-zzzz", [
   { type: "run-started", charter: "c.yaml", run_id: "bbbb2222-zzzz", items: ["i1", "i2"] },
   { type: "attempt-started", item_id: "i1", attempt: 1 },
@@ -36,9 +38,8 @@ const runB = run("bbbb2222-zzzz", [
   { type: "attempt-completed", item_id: "i1", attempt: 2, outcome: "pass", usage: cost(0.03) },
   { type: "attempt-started", item_id: "i2", attempt: 1 },
   { type: "scope-violated", item_id: "i2", files: ["x.ts"] },
-  { type: "attempt-completed", item_id: "i2", attempt: 1, outcome: "escalated" },
-  { type: "item-escalated", item_id: "i2", reason: "scope" },
-  { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0.06, iterations: 3 } },
+  { type: "item-escalated", item_id: "i2", reason: "scope-violation" },
+  { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0.06, iterations: 2 } },
 ]);
 
 describe("computeRunStats", () => {
@@ -68,10 +69,11 @@ describe("computeStats (cross-run)", () => {
     expect(agg.itemPassRate).toBeCloseTo(0.75);
   });
 
-  it("averages iterations over all runs and attempts over passed items", () => {
-    expect(agg.avgIterationsPerRun).toBeCloseTo(2.5); // (2 + 3) / 2
+  it("averages iterations/cost over completed runs and attempts over passed items", () => {
+    expect(agg.avgIterationsPerRun).toBeCloseTo(2.0); // completed runs: (2 + 2) / 2
     expect(agg.avgAttemptsPerPassedItem).toBeCloseTo(4 / 3); // A.i1=1, A.i2=1, B.i1=2 over 3 items
-    expect(agg.totalSpentUsd).toBeCloseTo(0.21);
+    expect(agg.totalSpentUsd).toBeCloseTo(0.21); // grand total, all runs
+    expect(agg.avgSpentPerRun).toBeCloseTo(0.105); // completed runs: (0.15 + 0.06) / 2
     expect(agg.scopeViolations).toBe(1);
   });
 
@@ -96,6 +98,17 @@ describe("computeStats (cross-run)", () => {
   it("skips empty run-logs", () => {
     expect(computeStats([[], runA]).runs).toBe(1);
   });
+
+  it("counts denylist-blocked events across runs", () => {
+    const blocked = run("dddd4444-zzzz", [
+      { type: "run-started", charter: "c.yaml", run_id: "dddd4444-zzzz", items: ["i1"] },
+      { type: "attempt-started", item_id: "i1", attempt: 1 },
+      { type: "denylist-blocked", item_id: "i1", tools: ["Bash"] },
+      { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
+      { type: "run-completed", scorecard: { total: 1, passed: 1, failed: 0, escalated: 0, budgetSpentUsd: 0, iterations: 1 } },
+    ]);
+    expect(computeStats([blocked]).denylistBlocks).toBe(1);
+  });
 });
 
 describe("renderStats", () => {
@@ -107,6 +120,17 @@ describe("renderStats", () => {
     expect(out).toContain("3/4 passed");
     expect(out).toContain("1 scope violations");
     expect(out).toContain("per-item");
+  });
+
+  it("marks a still-running run with … (no run-completed)", () => {
+    const running = run("eeee5555-zzzz", [
+      { type: "run-started", charter: "c.yaml", run_id: "eeee5555-zzzz", items: ["i1"] },
+      { type: "attempt-started", item_id: "i1", attempt: 1 },
+      { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
+    ]);
+    const out = renderStats(computeStats([running]));
+    expect(out).toContain("…");
+    expect(out).toContain("0 completed");
   });
 
   it("reports no runs", () => {

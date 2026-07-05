@@ -39,16 +39,19 @@ export interface AggregateStats {
   itemsPassed: number;
   itemsEscalated: number;
   itemPassRate: number;
-  /** 전체 run 대상. */
+  /** 완료 run 대상 (헤드라인 rate 와 분모 통일). */
   avgIterationsPerRun: number;
-  /** 완료 run 의 pass item 대상. */
+  /** 완료 run 의 pass item 총 시도 수 평균 — eventual pass 까지의 실패 시도 포함. */
   avgAttemptsPerPassedItem: number;
+  /** 완료 run 대상 평균 (totalSpentUsd 는 전체 run 합계). */
+  avgSpentPerRun: number;
   scopeViolations: number;
   denylistBlocks: number;
   totalSpentUsd: number;
   /** 입력 순서 유지 (보통 오래된→최신). */
   perRun: RunStats[];
-  /** worst-first 정렬 (escalation 많은 순). */
+  /** worst-first 정렬 (escalation 많은 순). 헤드라인 item 지표(완료 run 만)와 달리
+   * 진행 중 run 도 포함 — 병목 탐지엔 in-progress 신호도 유용. */
   perItem: ItemStats[];
 }
 
@@ -120,7 +123,8 @@ export function computeStats(runs: RunLogEntry[][]): AggregateStats {
   const itemsTotal = completed.reduce((a, r) => a + r.total, 0);
   const itemsPassed = completed.reduce((a, r) => a + r.passed, 0);
   const itemsEscalated = completed.reduce((a, r) => a + r.escalated, 0);
-  const iterations = perRun.reduce((a, r) => a + r.iterations, 0);
+  const completedIterations = completed.reduce((a, r) => a + r.iterations, 0);
+  const completedSpent = completed.reduce((a, r) => a + r.budgetSpentUsd, 0);
 
   const perItem = [...itemMap.values()].sort(
     (a, b) =>
@@ -138,8 +142,9 @@ export function computeStats(runs: RunLogEntry[][]): AggregateStats {
     itemsPassed,
     itemsEscalated,
     itemPassRate: itemsTotal ? itemsPassed / itemsTotal : 0,
-    avgIterationsPerRun: perRun.length ? iterations / perRun.length : 0,
+    avgIterationsPerRun: completed.length ? completedIterations / completed.length : 0,
     avgAttemptsPerPassedItem: passedItems ? passedAttempts / passedItems : 0,
+    avgSpentPerRun: completed.length ? completedSpent / completed.length : 0,
     scopeViolations: perRun.reduce((a, r) => a + r.scopeViolations, 0),
     denylistBlocks: perRun.reduce((a, r) => a + r.denylistBlocks, 0),
     totalSpentUsd: perRun.reduce((a, r) => a + r.budgetSpentUsd, 0),
@@ -163,7 +168,7 @@ export function renderStats(agg: AggregateStats, label?: string): string {
   lines.push(`items:        ${agg.itemsPassed}/${agg.itemsTotal} passed  (${pct(agg.itemPassRate)})   ${agg.itemsEscalated} escalated`);
   lines.push(`efficiency:   ${one(agg.avgAttemptsPerPassedItem)} attempts / passed item   ${one(agg.avgIterationsPerRun)} iters / run`);
   lines.push(`safety:       ${agg.scopeViolations} scope violations   ${agg.denylistBlocks} denylist blocks`);
-  lines.push(`cost:         ${usd(agg.totalSpentUsd)} total   ${usd(agg.runs ? agg.totalSpentUsd / agg.runs : 0)} / run`);
+  lines.push(`cost:         ${usd(agg.totalSpentUsd)} total   ${usd(agg.avgSpentPerRun)} / completed run`);
 
   lines.push("");
   lines.push("per-run:");
