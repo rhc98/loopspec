@@ -1,0 +1,24 @@
+loopspec_version: "1.0"
+name: tsc-green
+readiness: L2
+goal: "Make `tsc --noEmit` pass by fixing type errors file by file"
+scope:
+  include:
+    - "src/**"
+items:
+  - id: typecheck-core
+    description: "Fix type errors reported under src/core so the project typechecks"
+    scope:
+      include: ["src/core/**"]
+budget:
+  max_budget_usd: 3.00
+  per_step_max_budget_usd: 0.75
+  max_iterations: 8
+  max_attempts_per_item: 3
+  max_consecutive_failures: 3
+verify:
+  commands:
+    - "npx tsc --noEmit"
+denylist:
+  - "WebSearch"
+  - "WebFetch"

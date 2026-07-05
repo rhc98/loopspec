@@ -18,11 +18,13 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 
 ## System Overview
 
-1. `src/cli/index.ts` is the `commander` entrypoint exposing five subcommands:
-   `init <name>`, `validate <charter>`, `status [name]`, `stats [name]`, and
-   `run <charter> [--repo <dir>] [--resume <runId>]`. `status` reads the latest
-   run-log for one run; `stats` aggregates *all* matching run-logs for cross-run
-   convergence telemetry.
+1. `src/cli/index.ts` is the `commander` entrypoint exposing six subcommands:
+   `init <name>`, `validate <charter>`, `status [name]`, `stats [name]`,
+   `install <source>`, and `run <charter> [--repo <dir>] [--resume <runId>]`.
+   `status` reads the latest run-log for one run; `stats` aggregates *all*
+   matching run-logs for cross-run convergence telemetry; `install` scans a
+   charter for dangerous shell and installs it only on explicit consent (and
+   `run` refuses an untrusted charter with DANGER findings — see Trust below).
 2. `src/cli/run.ts` is the control loop. It runs `preflight()`, loads + validates
    the charter (fail-closed), assigns a `run_id`, and writes a `.loopspec/runs/<name>-<run_id>.jsonl`
    log. Each iteration: `stopCheck` → `pick` → `attemptGuard` → `buildStepPrompt`
@@ -49,15 +51,19 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 |---|---|
 | `package.json` | npm scripts (`test`, `validate`, `run`, `spike`), deps, `bin` |
 | `tsconfig.json` | ES2022 + NodeNext, strict; includes `spike/`, `src/`, `src/__tests__/` |
-| `src/cli/index.ts` | commander entry; `init` / `validate` / `status` / `run` subcommands, exit codes |
-| `src/cli/run.ts` | main control loop, scope assert, git rollback, `--resume`, scorecard print |
+| `src/cli/index.ts` | commander entry; `init` / `validate` / `status` / `stats` / `install` / `run` subcommands, exit codes |
+| `src/cli/run.ts` | main control loop, trust gate, scope assert, git rollback, `--resume`, scorecard print |
 | `src/cli/validate.ts` | `validate` command — loads YAML, runs validator, prints errors |
 | `src/cli/init.ts` | `init` command — scaffolds `<name>.charter.yaml` from the template |
 | `src/cli/status.ts` | `status` command — finds latest run-log, renders it |
 | `src/cli/stats.ts` | `stats` command — reads all matching run-logs, cross-run aggregate |
+| `src/cli/install.ts` | `install` command — resolve, validate, scan, consent gate, write + record trust |
+| `src/cli/registry.ts` | resolve a charter source (local path or `--registry` ref) → raw + origin |
+| `src/cli/trust-ledger.ts` | `.loopspec/trust.json` I/O — content-checksum consent records |
 | `src/spec/template.ts` | `charterTemplate(name)` — starter charter for `init` |
 | `src/core/status.ts` | pure `renderStatus(entries)` — run-log → human report |
 | `src/core/stats.ts` | pure `computeStats` / `renderStats` — cross-run convergence telemetry |
+| `src/core/scan.ts` | pure `scanCharter` / `hasDanger` / `renderFindings` — heuristic charter risk scan |
 | `src/spec/types.ts` | `Charter` / `Item` / `Budget` / `Verify` interfaces |
 | `src/spec/validator.ts` | fail-closed 4-rule charter validation → `ValidationError[]` |
 | `src/core/run-log.ts` | append-only JSONL writer (`fsync` per row) + reader; `RunLogEvent` union, `SCHEMA_VERSION` |
@@ -80,7 +86,7 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 |---|---|
 | `src/cli/` | command entrypoints + control loop (only layer that does process I/O / git / spawn) |
 | `src/spec/` | charter schema types + fail-closed validator |
-| `src/core/` | pure orchestration logic (run-log, state, controller, budget, scope, prompt, stats) |
+| `src/core/` | pure orchestration logic (run-log, state, controller, budget, scope, prompt, stats, scan) |
 | `src/adapters/` | LLM-CLI boundary; swap here to support another agent runner |
 | `src/__tests__/` | vitest unit tests (validator, controller, run-log, scope, parser) |
 | `fixtures/` | charters, the `mini-repo` target, recorded transcripts |
@@ -175,7 +181,11 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 - `status` is plain-text; a richer ink TUI is intentionally deferred.
 - `loopspec.schema.json` (polished JSON schema) not written yet; `spec/loopspec-1.0.md`
   is the current format reference.
-- Out of scope for now: `loopspec install` + `awesome-loops` (Ship 2)
-  and `run` flags `+Nk` / `--max-iter` / `--report-only` / `--filter` / `--agent`.
+- Trust model is **scan + explicit consent** (Ship 2a). The scanner
+  (`src/core/scan.ts`) is heuristic — a clean scan is *not* a safety proof.
+  Deferred to Ship 2b: the public `awesome-loops` repo + remote fetch, and
+  charter signing/checksums; sandboxed verify execution is deferred further.
+- Out of scope for now: `run` flags `+Nk` / `--max-iter` / `--report-only` /
+  `--filter` / `--agent`.
 
 <!-- MANUAL: Add long-term project notes below this line. -->

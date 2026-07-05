@@ -11,6 +11,8 @@ import { deriveState, type Scorecard } from "../core/state.js";
 import { pick, attemptGuard, stopCheck, buildScorecard } from "../core/controller.js";
 import { buildStepPrompt } from "../core/prompt.js";
 import { stepChangedFiles, scopeViolations } from "../core/scope.js";
+import { scanCharter, hasDanger, renderFindings } from "../core/scan.js";
+import { charterChecksum, isConsented } from "./trust-ledger.js";
 
 const ALLOWED_TOOLS = ["Read", "Edit"];
 const MAX_TURNS = 5;
@@ -18,6 +20,7 @@ const MAX_TURNS = 5;
 interface RunOptions {
   repo: string;
   resume?: string; // run_id of an existing run-log to continue
+  yes?: boolean; // trust-gate override for DANGER findings
 }
 
 function printScorecard(sc: Scorecard, logPath: string): void {
@@ -55,21 +58,38 @@ async function runVerify(commands: string[], repoDir: string): Promise<"pass" | 
   return "pass";
 }
 
-function loadAndValidate(charterPath: string): Charter {
-  const raw = yaml.load(readFileSync(charterPath, "utf8"));
-  const errors = validateCharter(raw);
+function loadAndValidate(charterPath: string): { charter: Charter; raw: string } {
+  const text = readFileSync(charterPath, "utf8");
+  const parsed = yaml.load(text);
+  const errors = validateCharter(parsed);
   if (errors.length > 0) {
     console.error(`✗ ${charterPath} is invalid:`);
     for (const e of errors) console.error(`  [${e.rule}] ${e.message}`);
     process.exit(1);
   }
-  return raw as Charter;
+  return { charter: parsed as Charter, raw: text };
 }
 
 export async function runCommand(charterPath: string, opts: RunOptions): Promise<number> {
-  await preflight();
+  const { charter, raw } = loadAndValidate(charterPath);
 
-  const charter = loadAndValidate(charterPath);
+  // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
+  const findings = scanCharter(charter);
+  if (hasDanger(findings)) {
+    const trusted = isConsented(process.cwd(), charterChecksum(raw));
+    if (!trusted && !opts.yes) {
+      console.error(`✗ refused to run "${charter.name}": untrusted charter with DANGER-level findings.`);
+      console.error(renderFindings(findings));
+      console.error(`\nInstall it with consent (loopspec install …) or re-run with --yes to override.`);
+      return 1;
+    }
+    console.log(`⚠ running charter with DANGER-level findings (${trusted ? "consented" : "--yes override"}).`);
+  } else if (findings.length > 0) {
+    console.log(`⚠ scan warnings:`);
+    console.log(renderFindings(findings));
+  }
+
+  await preflight();
   const repoDir = resolve(opts.repo);
 
   const run_id = opts.resume ?? randomUUID();

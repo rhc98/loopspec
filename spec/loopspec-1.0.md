@@ -111,6 +111,29 @@ run. The four rules:
   `schema_version` per row); the run state is always re-derived from that log, so
   `loopspec run --resume <run_id>` continues an interrupted run by replay.
 
+## Trust & sharing
+
+A charter carries **executable shell** in `verify.commands`, which `run` executes
+verbatim through the system shell. Installing and running someone else's charter
+therefore runs their commands on your machine — a real injection vector.
+
+loopspec's v1 trust model is **scan + explicit consent** (not a sandbox):
+
+- `loopspec install <source>` resolves a charter, **validates** it (fail-closed),
+  then **scans** `verify.commands` and `scope.include` for dangerous patterns
+  (pipe-to-shell, remote fetch, `rm -rf`, privilege escalation, secret access,
+  obfuscated payloads, overly broad scope). It prints the commands verbatim plus
+  the findings and installs only on consent. A charter with **DANGER**-level
+  findings is refused unless you pass `--yes`. `--report-only` scans without writing.
+- On consent the charter's content checksum is recorded in `.loopspec/trust.json`.
+  `loopspec run` re-scans on start and **refuses an untrusted charter with DANGER
+  findings** unless it is consented (or `--yes` is given).
+
+**The scan is heuristic, not a safety proof** — a clean scan does not guarantee
+safety (false negatives are possible). Sandboxed verify execution and charter
+signing are deferred. Treat a shared charter like any untrusted script: read the
+commands before consenting.
+
 ## Version compatibility (intended contract)
 
 `loopspec_version` is `major.minor`. The intended back-compat policy:

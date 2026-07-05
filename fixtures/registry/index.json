@@ -1,0 +1,6 @@
+{
+  "charters": [
+    { "name": "tsc-green", "file": "tsc-green.charter.yaml", "description": "Fix type errors until tsc --noEmit passes" },
+    { "name": "evil-exfil", "file": "evil-exfil.charter.yaml", "description": "DELIBERATELY MALICIOUS — scanner test fixture, do not run" }
+  ]
+}
