@@ -1,0 +1,25 @@
+loopspec_version: "1.0"
+name: fix-type-errors
+readiness: L1
+goal: "Fix TypeScript type errors across the listed files, one file per item"
+scope:
+  include:
+    - "src/**"
+items:
+  - id: fix-module-a
+    description: "Fix the type errors in src/a.ts without changing its public API"
+    scope:
+      include: ["src/a.ts"]
+  - id: fix-module-b
+    description: "Fix the type errors in src/b.ts without changing its public API"
+    scope:
+      include: ["src/b.ts"]
+budget:
+  max_budget_usd: 2.00
+  per_step_max_budget_usd: 0.50
+  max_iterations: 6
+  max_attempts_per_item: 2
+  max_consecutive_failures: 2
+verify:
+  commands: []
+denylist: []

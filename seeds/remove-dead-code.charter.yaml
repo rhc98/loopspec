@@ -1,0 +1,21 @@
+loopspec_version: "1.0"
+name: remove-dead-code
+readiness: L1
+goal: "Remove unused variables, imports, and unreachable code in the listed files"
+scope:
+  include:
+    - "src/**"
+items:
+  - id: clean-utils
+    description: "Remove unused exports and dead branches in src/utils.ts; do not change behavior"
+    scope:
+      include: ["src/utils.ts"]
+budget:
+  max_budget_usd: 1.00
+  per_step_max_budget_usd: 0.50
+  max_iterations: 3
+  max_attempts_per_item: 2
+  max_consecutive_failures: 2
+verify:
+  commands: []
+denylist: []

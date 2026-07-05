@@ -1,0 +1,9 @@
+node_modules/
+dist/
+spike/results.jsonl
+.loopspec/
+.omc/
+.claude/settings.local.json
+# nested git repo used as a live scope-check target; not tracked by the parent.
+# regenerate/keep locally — fixture packaging (submodule vs script) is a Ship 2 decision.
+fixtures/mini-repo/

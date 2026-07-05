@@ -1,0 +1,26 @@
+{
+  "name": "loopspec",
+  "version": "0.1.0",
+  "description": "Convergent sweep engine — Ship 1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "loopspec": "src/cli/index.ts"
+  },
+  "scripts": {
+    "spike": "tsx spike/run.ts",
+    "test": "vitest run",
+    "validate": "tsx src/cli/index.ts validate",
+    "run": "tsx src/cli/index.ts run"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "js-yaml": "^4.1.0",
+    "execa": "^9.5.2",
+    "commander": "^12.1.0",
+    "vitest": "^2.1.8",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.7"
+  }
+}

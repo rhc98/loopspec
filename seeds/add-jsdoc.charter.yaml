@@ -1,0 +1,21 @@
+loopspec_version: "1.0"
+name: add-jsdoc
+readiness: L1
+goal: "Add concise JSDoc to exported functions in the listed files without changing code"
+scope:
+  include:
+    - "src/**"
+items:
+  - id: document-api
+    description: "Add a one-line JSDoc above each exported function in src/api.ts; no logic changes"
+    scope:
+      include: ["src/api.ts"]
+budget:
+  max_budget_usd: 1.50
+  per_step_max_budget_usd: 0.50
+  max_iterations: 3
+  max_attempts_per_item: 2
+  max_consecutive_failures: 2
+verify:
+  commands: []
+denylist: []

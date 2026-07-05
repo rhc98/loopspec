@@ -1,0 +1,12 @@
+name: mini-spike
+readiness: L1
+goal: "Fix the type error in src/a.ts"
+scope:
+  include:
+    - "src/a.ts"
+budget:
+  default_tokens: 50000
+  est_tokens_per_iteration: 15000
+  max_iterations: 1
+  max_attempts_per_item: 1
+  max_consecutive_failures: 1

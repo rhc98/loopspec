@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { runCommand } from "./run.js";
+import { validateCommand } from "./validate.js";
+import { initCommand } from "./init.js";
+import { statusCommand } from "./status.js";
+
+const program = new Command();
+
+program.name("loopspec").description("Convergent sweep engine").version("1.0.0");
+
+program
+  .command("validate")
+  .description("Validate a charter file (fail-closed)")
+  .argument("<charter>", "path to charter YAML")
+  .action((charter: string) => {
+    process.exit(validateCommand(charter));
+  });
+
+program
+  .command("init")
+  .description("Scaffold a starter charter YAML")
+  .argument("<name>", "charter name (also the output filename)")
+  .option("-f, --force", "overwrite if the file already exists")
+  .action((name: string, opts: { force?: boolean }) => {
+    process.exit(initCommand(name, opts));
+  });
+
+program
+  .command("status")
+  .description("Show the latest run-log status")
+  .argument("[name]", "limit to charters with this name")
+  .action((name: string | undefined) => {
+    process.exit(statusCommand(name));
+  });
+
+program
+  .command("run")
+  .description("Run the convergent sweep over a charter")
+  .argument("<charter>", "path to charter YAML")
+  .option("-C, --repo <dir>", "target repository directory", process.cwd())
+  .option("--resume <runId>", "resume an existing run-log instead of starting fresh")
+  .action(async (charter: string, opts: { repo: string; resume?: string }) => {
+    process.exit(await runCommand(charter, { repo: opts.repo, resume: opts.resume }));
+  });
+
+program.parseAsync();

@@ -1,0 +1,26 @@
+loopspec_version: "1.0"
+name: mini-ship1
+readiness: L1
+goal: "Fix type errors and unused variables in fixture repo"
+scope:
+  include:
+    - "src/a.ts"
+    - "src/b.ts"
+items:
+  - id: fix-a-ts
+    description: "Fix the type error in src/a.ts"
+    scope:
+      include: ["src/a.ts"]
+  - id: fix-b-ts
+    description: "Remove the unused variable in src/b.ts"
+    scope:
+      include: ["src/b.ts"]
+budget:
+  max_budget_usd: 2.00
+  per_step_max_budget_usd: 0.50
+  max_iterations: 4
+  max_attempts_per_item: 2
+  max_consecutive_failures: 2
+verify:
+  commands: []          # L1이므로 비어도 허용
+denylist: []            # 기본 allowedTools(Read,Edit) 외 추가 금지 없음
