@@ -18,9 +18,11 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 
 ## System Overview
 
-1. `src/cli/index.ts` is the `commander` entrypoint exposing four subcommands:
-   `init <name>`, `validate <charter>`, `status [name]`, and
-   `run <charter> [--repo <dir>] [--resume <runId>]`.
+1. `src/cli/index.ts` is the `commander` entrypoint exposing five subcommands:
+   `init <name>`, `validate <charter>`, `status [name]`, `stats [name]`, and
+   `run <charter> [--repo <dir>] [--resume <runId>]`. `status` reads the latest
+   run-log for one run; `stats` aggregates *all* matching run-logs for cross-run
+   convergence telemetry.
 2. `src/cli/run.ts` is the control loop. It runs `preflight()`, loads + validates
    the charter (fail-closed), assigns a `run_id`, and writes a `.loopspec/runs/<name>-<run_id>.jsonl`
    log. Each iteration: `stopCheck` → `pick` → `attemptGuard` → `buildStepPrompt`
@@ -52,8 +54,10 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 | `src/cli/validate.ts` | `validate` command — loads YAML, runs validator, prints errors |
 | `src/cli/init.ts` | `init` command — scaffolds `<name>.charter.yaml` from the template |
 | `src/cli/status.ts` | `status` command — finds latest run-log, renders it |
+| `src/cli/stats.ts` | `stats` command — reads all matching run-logs, cross-run aggregate |
 | `src/spec/template.ts` | `charterTemplate(name)` — starter charter for `init` |
 | `src/core/status.ts` | pure `renderStatus(entries)` — run-log → human report |
+| `src/core/stats.ts` | pure `computeStats` / `renderStats` — cross-run convergence telemetry |
 | `src/spec/types.ts` | `Charter` / `Item` / `Budget` / `Verify` interfaces |
 | `src/spec/validator.ts` | fail-closed 4-rule charter validation → `ValidationError[]` |
 | `src/core/run-log.ts` | append-only JSONL writer (`fsync` per row) + reader; `RunLogEvent` union, `SCHEMA_VERSION` |
@@ -76,7 +80,7 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 |---|---|
 | `src/cli/` | command entrypoints + control loop (only layer that does process I/O / git / spawn) |
 | `src/spec/` | charter schema types + fail-closed validator |
-| `src/core/` | pure orchestration logic (run-log, state, controller, budget, scope, prompt) |
+| `src/core/` | pure orchestration logic (run-log, state, controller, budget, scope, prompt, stats) |
 | `src/adapters/` | LLM-CLI boundary; swap here to support another agent runner |
 | `src/__tests__/` | vitest unit tests (validator, controller, run-log, scope, parser) |
 | `fixtures/` | charters, the `mini-repo` target, recorded transcripts |
@@ -171,8 +175,7 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 - `status` is plain-text; a richer ink TUI is intentionally deferred.
 - `loopspec.schema.json` (polished JSON schema) not written yet; `spec/loopspec-1.0.md`
   is the current format reference.
-- Out of scope for now: `loopspec install` + `awesome-loops` (Ship 2),
-  `loopspec stats` (Ship 3), and `run` flags `+Nk` / `--max-iter` /
-  `--report-only` / `--filter` / `--agent`.
+- Out of scope for now: `loopspec install` + `awesome-loops` (Ship 2)
+  and `run` flags `+Nk` / `--max-iter` / `--report-only` / `--filter` / `--agent`.
 
 <!-- MANUAL: Add long-term project notes below this line. -->

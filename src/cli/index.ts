@@ -4,6 +4,7 @@ import { runCommand } from "./run.js";
 import { validateCommand } from "./validate.js";
 import { initCommand } from "./init.js";
 import { statusCommand } from "./status.js";
+import { statsCommand } from "./stats.js";
 
 const program = new Command();
 
@@ -32,6 +33,14 @@ program
   .argument("[name]", "limit to charters with this name")
   .action((name: string | undefined) => {
     process.exit(statusCommand(name));
+  });
+
+program
+  .command("stats")
+  .description("Aggregate cross-run convergence telemetry from run-logs")
+  .argument("[name]", "limit to charters with this name")
+  .action((name: string | undefined) => {
+    process.exit(statsCommand(name));
   });
 
 program

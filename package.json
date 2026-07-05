@@ -11,7 +11,8 @@
     "spike": "tsx spike/run.ts",
     "test": "vitest run",
     "validate": "tsx src/cli/index.ts validate",
-    "run": "tsx src/cli/index.ts run"
+    "run": "tsx src/cli/index.ts run",
+    "stats": "tsx src/cli/index.ts stats"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
