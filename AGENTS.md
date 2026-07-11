@@ -49,7 +49,10 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 
 | File | Description |
 |---|---|
-| `package.json` | npm scripts (`test`, `validate`, `run`, `spike`), deps, `bin` |
+| `package.json` | npm scripts (`test`, `typecheck`, `fixtures:init`, `validate`, `run`, `spike`), deps, `bin` |
+| `LICENSE` | MIT license |
+| `README.md` / `README.en.md` | user-facing docs (Korean / English) |
+| `scripts/init-fixtures.ts` | create/reset `fixtures/mini-repo` (`npm run fixtures:init`) |
 | `tsconfig.json` | ES2022 + NodeNext, strict; includes `spike/`, `src/`, `src/__tests__/` |
 | `src/cli/index.ts` | commander entry; `init` / `validate` / `status` / `stats` / `install` / `run` subcommands, exit codes |
 | `src/cli/run.ts` | main control loop, trust gate, scope assert, git rollback, `--resume`, scorecard print |
@@ -92,6 +95,7 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 | `fixtures/` | charters, the `mini-repo` target, recorded transcripts |
 | `seeds/` | adapt-and-run charter examples (kept valid by `seeds.test.ts`) |
 | `spec/` | `loopspec-1.0.md` charter format reference |
+| `scripts/` | repo maintenance scripts (`init-fixtures.ts`) |
 | `spike/` | Ship 0 throwaway spike + `results.jsonl` (reference only) |
 | `.loopspec/runs/` | runtime run-logs (gitignored) |
 
@@ -118,20 +122,21 @@ small, so the orchestrator — not the model — owns convergence and stopping.
   changes once there is more than one item. Rollback must target only this
   step's files, never `git checkout HEAD -- .`.
 - **`fixtures/mini-repo` is a real nested git repo on purpose** (the scope check
-  needs a git target). Reset it between runs with
-  `git -C fixtures/mini-repo checkout HEAD -- .`; its `HEAD` intentionally holds
-  the broken `a.ts` / `b.ts`.
+  needs a git target). It is gitignored by the parent repo — create or reset it
+  with `npm run fixtures:init` (`scripts/init-fixtures.ts`); its `HEAD`
+  intentionally holds the broken `a.ts` / `b.ts`.
 - Docs in prose are Korean-friendly; **code, identifiers, and commits are English**.
-- The repo root is **not yet a git repo**; only `fixtures/mini-repo` is.
+- The repo root and `fixtures/mini-repo` are **separate git repos**; never run
+  git commands for one against the other.
 
 ### Validation Checklist
 
-- `./node_modules/.bin/tsc --noEmit` — typecheck (no root `typecheck` script yet).
+- `npm run typecheck` — `tsc --noEmit` over `src/`, `scripts/`, `spike/`.
 - `npm test` — vitest unit suite (deterministic; no network).
 - `./node_modules/.bin/tsx src/cli/index.ts validate fixtures/multi-charter.yaml` — expect valid (exit 0).
 - `./node_modules/.bin/tsx src/cli/index.ts validate fixtures/mini-charter.yaml` — expect invalid (exit 1).
 - Live E2E (needs a logged-in `claude`):
-  `git -C fixtures/mini-repo checkout HEAD -- . && ./node_modules/.bin/tsx src/cli/index.ts run fixtures/multi-charter.yaml --repo fixtures/mini-repo`
+  `npm run fixtures:init && ./node_modules/.bin/tsx src/cli/index.ts run fixtures/multi-charter.yaml --repo fixtures/mini-repo`
   — expect scorecard `passed: 2, escalated: 0`.
 
 ### Operational Assumptions
@@ -169,9 +174,9 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 
 ## Known Gaps
 
-- No `git init` at the repo root yet; nothing is under version control or pushed.
-- No root `typecheck`/`build` scripts and no compiled `dist/`; `bin` points at the
-  `.ts` entry and relies on `tsx`.
+- No `build` script and no compiled `dist/`; `bin` points at the `.ts` entry and
+  relies on `tsx`, so the package is not npm-publishable yet (runtime deps also
+  still live in `devDependencies`).
 - `run --repo` defaults to `process.cwd()`; the engine is still fixture-oriented
   (no charter-level repo field).
 - Budget accounting only sees `total_cost_usd` when claude reports it; in pure

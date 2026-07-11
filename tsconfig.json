@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "outDir": "dist"
   },
-  "include": ["spike/**/*", "src/**/*", "src/__tests__/**/*"]
+  "include": ["spike/**/*", "scripts/**/*", "src/**/*", "src/__tests__/**/*"]
 }

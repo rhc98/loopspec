@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run validate -- fixtures/multi-charter.yaml
+      - name: fixtures:init creates mini-repo from scratch
+        run: |
+          npm run fixtures:init
+          test -f fixtures/mini-repo/src/a.ts
+          test -f fixtures/mini-repo/src/b.ts
+          git -C fixtures/mini-repo log --oneline -1
+      - name: fixtures:init resets a dirtied mini-repo
+        run: |
+          echo "dirty" >> fixtures/mini-repo/src/a.ts
+          npm run fixtures:init
+          git -C fixtures/mini-repo diff --quiet

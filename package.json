@@ -1,15 +1,20 @@
 {
   "name": "loopspec",
   "version": "0.1.0",
-  "description": "Convergent sweep engine — Ship 1",
-  "private": true,
+  "description": "Convergent sweep engine for bounded, auditable LLM automation over a YAML charter",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "loopspec": "src/cli/index.ts"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "spike": "tsx spike/run.ts",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "fixtures:init": "tsx scripts/init-fixtures.ts",
     "validate": "tsx src/cli/index.ts validate",
     "run": "tsx src/cli/index.ts run",
     "stats": "tsx src/cli/index.ts stats"
