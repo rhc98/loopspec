@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Convergent sweep engine for bounded, auditable LLM automation over a YAML charter",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhc98/loopspec.git"
+  },
+  "homepage": "https://github.com/rhc98/loopspec#readme",
+  "bugs": {
+    "url": "https://github.com/rhc98/loopspec/issues"
+  },
   "type": "module",
   "bin": {
     "loopspec": "src/cli/index.ts"

@@ -35,7 +35,7 @@ LLM에게 넓은 편집 권한을 주고 알아서 잘하길 바라는 방식은
 ## 빠른 시작
 
 ```bash
-git clone <this-repo-url> loopspec
+git clone https://github.com/rhc98/loopspec.git
 cd loopspec
 npm install
 npm test                 # 유닛 테스트 84개, 결정적, 네트워크 불필요

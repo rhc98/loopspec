@@ -40,7 +40,7 @@ convergence and stopping.
 ## Quick start
 
 ```bash
-git clone <this-repo-url> loopspec
+git clone https://github.com/rhc98/loopspec.git
 cd loopspec
 npm install
 npm test                 # 84 unit tests, deterministic, no network
