@@ -146,16 +146,21 @@ rules, and the trust model: [`spec/loopspec-1.0.md`](spec/loopspec-1.0.md).
   tokens already spent + N (input+output only, cache tokens excluded). Overrides
   the charter's `budget.max_tokens` for this invocation. The main way to bound a
   run in subscription mode where USD is not reported.
-- `--max-iter <n>` — override `budget.max_iterations` for this invocation
-  (useful for raising the cap on resume).
+- `--max-iter <n>` — iteration headroom for this invocation, same additive
+  model as `+Nk`: effective cap = iterations already run + N (a fresh run gets
+  N, a resume gets "N more").
 - `--report-only` — print what would run (effective caps, item statuses, next
   item) and execute nothing, write nothing.
 - `--filter <ids>` — run only the comma-separated item ids (exact match;
-  unknown ids are refused).
+  unknown ids are refused). The run-log records the filtered execution scope,
+  so `status`/`stats` agree with what actually ran.
 - `--agent <name>` — adapter that drives steps (default `claude-code`).
 
 A run that stopped on budget/iterations can be continued past the old cap with
-`--resume <runId>` plus a fresh `+Nk` or `--max-iter`.
+`--resume <runId>` plus a fresh `+Nk` or `--max-iter` (resume also resets the
+consecutive-failure streak). A resume that would immediately re-stop is refused
+before touching the log. The exit code is **0 only on convergence** — an early
+stop that leaves pending items exits 1.
 
 (With a global install (`npm install -g loopspec`), just use `loopspec
 <command>` directly. In a source checkout, `validate`, `run`, and `stats` have

@@ -30,6 +30,17 @@ export interface Scorecard {
   iterations: number;
 }
 
+/** 로그에 늦게 등장하는 item 도 추적 — 필터된 run 을 나중에 넓은 필터로 resume 하면
+ * run-started 에 없던 id 의 attempt 이벤트가 나올 수 있다. */
+function itemOf(state: RunState, id: string): ItemState {
+  let it = state.items.get(id);
+  if (!it) {
+    it = { id, status: "pending", attempts: 0 };
+    state.items.set(id, it);
+  }
+  return it;
+}
+
 /** run-log replay 로 RunState 재구성. 순수함수 (side-effect 없음). */
 export function deriveState(entries: RunLogEntry[]): RunState {
   const state: RunState = {
@@ -55,11 +66,9 @@ export function deriveState(entries: RunLogEntry[]): RunState {
         break;
       }
       case "attempt-started": {
-        const it = state.items.get(e.item_id);
-        if (it) {
-          it.status = "in-progress";
-          it.attempts += 1;
-        }
+        const it = itemOf(state, e.item_id);
+        it.status = "in-progress";
+        it.attempts += 1;
         break;
       }
       case "scope-violated": {
@@ -68,18 +77,16 @@ export function deriveState(entries: RunLogEntry[]): RunState {
         break;
       }
       case "attempt-completed": {
-        const it = state.items.get(e.item_id);
-        if (it) {
-          it.lastOutcome = e.outcome;
-          if (e.outcome === "pass") {
-            it.status = "pass";
-            state.consecutiveFailures = 0;
-          } else if (e.outcome === "fail") {
-            it.status = "fail";
-            state.consecutiveFailures += 1;
-          } else {
-            it.status = "escalated";
-          }
+        const it = itemOf(state, e.item_id);
+        it.lastOutcome = e.outcome;
+        if (e.outcome === "pass") {
+          it.status = "pass";
+          state.consecutiveFailures = 0;
+        } else if (e.outcome === "fail") {
+          it.status = "fail";
+          state.consecutiveFailures += 1;
+        } else {
+          it.status = "escalated";
         }
         state.iterations += 1;
         state.budgetSpentUsd = accountUsage(state.budgetSpentUsd, e.usage);
@@ -88,16 +95,17 @@ export function deriveState(entries: RunLogEntry[]): RunState {
       }
       case "run-resumed": {
         // 재개된 run 은 다시 running — budget/iteration stop 으로 completed 된 run 도
-        // 캡을 올려(resume + 오버라이드) 이어갈 수 있다.
+        // 캡을 올려(resume + 오버라이드) 이어갈 수 있다. resume 은 운영자 개입이므로
+        // 연속 실패 스트릭도 단절된다 (아니면 max-consecutive-failures 로 멈춘 run 이
+        // 영원히 재개 불가).
         state.status = "running";
+        state.consecutiveFailures = 0;
         break;
       }
       case "item-escalated": {
-        const it = state.items.get(e.item_id);
-        if (it) {
-          it.status = "escalated";
-          it.lastOutcome = "escalated";
-        }
+        const it = itemOf(state, e.item_id);
+        it.status = "escalated";
+        it.lastOutcome = "escalated";
         break;
       }
       case "run-completed": {

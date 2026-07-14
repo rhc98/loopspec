@@ -138,14 +138,18 @@ denylist: []
 - `+Nk` (예: `+50k`) — 이번 실행의 토큰 헤드룸. 유효 캡 = 이미 쓴 토큰 + N (input+output만,
   cache 토큰 제외). 차터의 `budget.max_tokens`를 이번 실행에 한해 덮어씁니다. USD가 안 잡히는
   구독 모드에서 실행을 바운드하는 주 수단.
-- `--max-iter <n>` — 이번 실행의 `budget.max_iterations` 오버라이드 (resume에서 올릴 때 유용).
+- `--max-iter <n>` — 이번 실행의 iteration 헤드룸. `+Nk`와 같은 additive 모델: 유효 캡 =
+  이미 돈 iteration + N (fresh run은 N, resume은 "N번 더").
 - `--report-only` — 무엇이 실행될지(유효 캡, 항목 상태, 다음 항목)만 출력하고 아무것도
   실행/기록하지 않습니다.
-- `--filter <ids>` — 콤마 구분 item id만 실행 (정확 매칭, 모르는 id는 거부).
+- `--filter <ids>` — 콤마 구분 item id만 실행 (정확 매칭, 모르는 id는 거부). run-log에는
+  필터된 실행 scope가 기록되므로 `status`/`stats`가 실제 실행과 일치합니다.
 - `--agent <name>` — step을 구동할 어댑터 (기본 `claude-code`).
 
 budget/iteration stop으로 끝난 run은 `--resume <runId>`에 `+Nk`나 `--max-iter`를 더해
-캡을 올려 이어갈 수 있습니다.
+캡을 올려 이어갈 수 있습니다 (resume은 연속 실패 스트릭도 리셋). 캡을 안 올려서 즉시
+재중단될 resume은 로그를 건드리기 전에 거부됩니다. 종료 코드는 **수렴했을 때만 0** —
+조기 중단으로 pending 항목이 남으면 1입니다.
 
 (전역 설치(`npm install -g loopspec`)했다면 `loopspec <command>`를 그대로 쓰면 됩니다.
 소스 체크아웃에서는 `validate`, `run`, `stats`에 `npm run` 스크립트가 있고

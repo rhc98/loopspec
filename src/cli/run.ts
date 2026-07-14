@@ -9,7 +9,8 @@ import { getAdapter, knownAgents, type Adapter } from "../adapters/registry.js";
 import { appendEntry, readEntries } from "../core/run-log.js";
 import { deriveState, type RunState, type Scorecard } from "../core/state.js";
 import { pick, attemptGuard, stopCheck, buildScorecard } from "../core/controller.js";
-import { applyOverrides, parseTokenBump, type RunOverrides } from "../core/overrides.js";
+import { applyOverrides, describeOverrides, type RunOverrides } from "../core/overrides.js";
+import { renderItemLine } from "../core/status.js";
 import { buildStepPrompt } from "../core/prompt.js";
 import { stepChangedFiles, scopeViolations } from "../core/scope.js";
 import { scanCharter, hasDanger, renderFindings } from "../core/scan.js";
@@ -78,16 +79,20 @@ function loadAndValidate(charterPath: string): { charter: Charter; raw: string }
   return { charter: parsed as Charter, raw: text };
 }
 
+/** 수렴(대상 항목 전부 pass)했을 때만 0 — 조기 중단으로 pending 이 남으면 1. */
+function exitCode(sc: Scorecard): number {
+  return sc.passed === sc.total ? 0 : 1;
+}
+
 /** --report-only 출력: 무엇이 실행될지 보여주고 아무것도 실행/기록하지 않는다. */
 function printReport(
-  charter: Charter,
   effective: Charter,
   state: RunState,
   repoDir: string,
   findings: ReturnType<typeof scanCharter>,
 ): void {
-  console.log(`\n=== loopspec report-only: ${charter.name} ===`);
-  console.log(`Goal:  ${charter.goal}`);
+  console.log(`\n=== loopspec report-only: ${effective.name} ===`);
+  console.log(`Goal:  ${effective.goal}`);
   console.log(`Repo:  ${repoDir}`);
   const caps = [
     `iterations=${effective.budget.max_iterations}`,
@@ -102,8 +107,8 @@ function printReport(
   }
   console.log(`Items:`);
   for (const item of effective.items) {
-    const it = state.items.get(item.id);
-    console.log(`  ${item.id}: ${it?.status ?? "pending"} (attempts ${it?.attempts ?? 0})`);
+    const it = state.items.get(item.id) ?? { id: item.id, status: "pending" as const, attempts: 0 };
+    console.log(renderItemLine(it));
   }
   const next = pick(state, effective);
   console.log(`Next:  ${next?.id ?? "(none)"}`);
@@ -122,32 +127,18 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     return 1;
   }
 
-  // 오버라이드 파싱 — fail-closed
-  const overrides: RunOverrides = {};
-  if (opts.tokenBump !== undefined) {
-    const bump = parseTokenBump(opts.tokenBump);
-    if (bump === null) {
-      console.error(`✗ invalid token budget "${opts.tokenBump}" — expected +N or +Nk (e.g. +50k)`);
-      return 1;
-    }
-    overrides.tokenBump = bump;
-  }
-  if (opts.maxIter !== undefined) {
-    if (!Number.isInteger(opts.maxIter) || opts.maxIter <= 0) {
-      console.error(`✗ invalid --max-iter "${opts.maxIter}" — expected a positive integer`);
-      return 1;
-    }
-    overrides.maxIterations = opts.maxIter;
-  }
-  if (opts.filter !== undefined) {
-    overrides.filterIds = opts.filter.split(",").map((s) => s.trim()).filter(Boolean);
-  }
+  // 오버라이드 수집 — 검증은 전부 applyOverrides 의 errors 채널에서 (단일 fail-closed 경로)
+  const overrides: RunOverrides = {
+    maxIterations: opts.maxIter,
+    tokenBump: opts.tokenBump,
+    filterIds: opts.filter?.split(",").map((s) => s.trim()).filter(Boolean),
+  };
 
   const repoDir = resolve(opts.repo);
   const run_id = opts.resume ?? randomUUID();
   const logPath = resolve(runsDir(), `${charter.name}-${run_id}.jsonl`);
 
-  // resume 면 기존 로그에서 prior state 파생 (+Nk 의 토큰 기준점으로도 사용)
+  // resume 면 기존 로그에서 prior state 파생 (+Nk/--max-iter 의 additive 기준점으로도 사용)
   let prior: RunState | undefined;
   if (opts.resume) {
     const existing = readEntries(logPath);
@@ -156,17 +147,12 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
       return 1;
     }
     prior = deriveState(existing);
-    // 모든 항목이 terminal 이면 더 할 일이 없다. budget/iteration stop 으로 completed 된
-    // run 은 non-terminal 항목이 남아 있으므로 resume(+오버라이드 헤드룸) 가능.
-    if (prior.status === "completed" && stopCheck(prior, charter).reason === "all-items-complete") {
-      console.log(`run ${run_id.slice(0, 8)} already completed.`);
-      const sc = buildScorecard(prior, charter);
-      printScorecard(sc, logPath);
-      return sc.escalated === 0 && sc.failed === 0 ? 0 : 1;
-    }
   }
 
-  const applied = applyOverrides(charter, overrides, prior?.tokensSpent ?? 0);
+  const applied = applyOverrides(charter, overrides, {
+    tokens: prior?.tokensSpent ?? 0,
+    iterations: prior?.iterations ?? 0,
+  });
   if (applied.errors.length > 0) {
     console.error(`✗ invalid overrides:`);
     for (const e of applied.errors) console.error(`  ${e}`);
@@ -174,12 +160,36 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
   }
   const effective = applied.charter;
 
+  // 대상(effective) 항목이 모두 terminal 인 완료 run 은 더 할 일이 없다.
+  // budget/iteration stop 으로 completed 된 run 은 non-terminal 항목이 남아 있으므로
+  // resume(+오버라이드 헤드룸) 가능.
+  if (prior && prior.status === "completed" && stopCheck(prior, effective).reason === "all-items-complete") {
+    console.log(`run ${run_id.slice(0, 8)} already completed.`);
+    const sc = buildScorecard(prior, effective);
+    printScorecard(sc, logPath);
+    return exitCode(sc);
+  }
+
   const findings = scanCharter(charter);
 
   // report-only — 게이트/preflight/로그 이전에 계획만 출력하고 종료 (install --report-only 선례)
   if (opts.reportOnly) {
-    printReport(charter, effective, prior ?? deriveState([]), repoDir, findings);
+    printReport(effective, prior ?? deriveState([]), repoDir, findings);
     return 0;
+  }
+
+  // resume 이 첫 stopCheck 에서 그대로 재중단될 상황이면 로그를 건드리기 전에 거부 —
+  // 아니면 run-resumed + run-completed 만 쌓이는 무진전 no-op 이 된다.
+  // (all-items-complete 는 예외: 크래시로 run-completed 가 안 남은 로그를 마저 종결해준다.)
+  if (prior) {
+    const preview: RunState = { ...prior, consecutiveFailures: 0 }; // run-resumed 가 리셋할 값 선반영
+    const { stop, reason } = stopCheck(preview, effective);
+    if (stop && reason !== "all-items-complete") {
+      console.error(`✗ resume would make no progress: ${reason}.`);
+      console.error(`  Raise the cap for this invocation (+Nk for tokens, --max-iter for iterations)`);
+      console.error(`  or adjust the charter budget (max_budget_usd cannot be raised from the CLI).`);
+      return 1;
+    }
   }
 
   // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
@@ -204,23 +214,20 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
   console.log(`Agent: ${adapter.name}`);
   console.log(`Repo:  ${repoDir}`);
   console.log(`Items: ${effective.items.map((i) => i.id).join(", ")}`);
-  if (Object.keys(overrides).length > 0) {
-    const parts: string[] = [];
-    if (overrides.maxIterations !== undefined) parts.push(`max-iter=${overrides.maxIterations}`);
-    if (overrides.tokenBump !== undefined) parts.push(`tokens=+${overrides.tokenBump} (cap ${effective.budget.max_tokens})`);
-    if (overrides.filterIds !== undefined) parts.push(`filter=${overrides.filterIds.join(",")}`);
-    console.log(`Overrides: ${parts.join("  ")}`);
-  }
+  const overridesLine = describeOverrides(overrides, effective);
+  if (overridesLine) console.log(`Overrides: ${overridesLine}`);
   console.log(`Log:   ${logPath}\n`);
 
   if (opts.resume) {
     appendEntry(logPath, run_id, { type: "run-resumed" });
   } else {
+    // 실제 실행 대상(effective)을 기록해야 replay/stats 가 이 run 의 scope 와 일치한다.
+    // (필터를 넓혀 resume 하면 새 item 은 attempt 이벤트에서 lazy 하게 추적된다.)
     appendEntry(logPath, run_id, {
       type: "run-started",
       charter: charterPath,
       run_id,
-      items: charter.items.map((i) => i.id),
+      items: effective.items.map((i) => i.id),
     });
   }
   let state = deriveState(readEntries(logPath));
@@ -293,5 +300,5 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
   appendEntry(logPath, run_id, { type: "run-completed", scorecard });
   printScorecard(scorecard, logPath);
 
-  return scorecard.escalated === 0 && scorecard.failed === 0 ? 0 : 1;
+  return exitCode(scorecard);
 }

@@ -79,23 +79,23 @@ afterEach(() => {
 });
 
 describe("run loop with injected adapter", () => {
-  it("--max-iter stops after N iterations", async () => {
+  it("--max-iter stops after N iterations and exits non-zero (truncated, not converged)", async () => {
     const adapter = mockAdapter(passStep);
     const code = await runCommand(charterPath, { repo: repoDir, adapter, maxIter: 1 });
-    expect(code).toBe(0); // pending 아이템은 fail/escalated 가 아니므로 0
+    expect(code).toBe(1); // 3개 중 1개만 통과 — pending 이 남으면 수렴 아님
     expect(adapter.calls).toBe(1);
     const attempts = logEntries().filter((e) => e.event.type === "attempt-completed");
     expect(attempts.length).toBe(1);
   });
 
-  it("--filter runs only the selected item but logs the full item list", async () => {
+  it("--filter runs only the selected item and logs the effective item list", async () => {
     const adapter = mockAdapter(passStep);
     const code = await runCommand(charterPath, { repo: repoDir, adapter, filter: "b" });
-    expect(code).toBe(0);
+    expect(code).toBe(0); // 필터된 scope(b) 전부 통과 = 수렴
     expect(adapter.calls).toBe(1);
     const entries = logEntries();
     const startedEvt = entries.find((e) => e.event.type === "run-started")!.event;
-    expect(startedEvt.type === "run-started" && startedEvt.items).toEqual(["a", "b", "c"]);
+    expect(startedEvt.type === "run-started" && startedEvt.items).toEqual(["b"]); // replay 가 실행 scope 와 일치
     const attempted = entries.filter((e) => e.event.type === "attempt-completed").map((e) => (e.event as { item_id: string }).item_id);
     expect(attempted).toEqual(["b"]);
     const completed = entries.find((e) => e.event.type === "run-completed")!.event;
@@ -105,7 +105,7 @@ describe("run loop with injected adapter", () => {
   it("+Nk trips budget-exceeded on tokens", async () => {
     const adapter = mockAdapter(() => passStep(40000, 20000));
     const code = await runCommand(charterPath, { repo: repoDir, adapter, tokenBump: "+50k" });
-    expect(code).toBe(0);
+    expect(code).toBe(1); // 조기 중단 — 3개 중 1개만 통과
     expect(adapter.calls).toBe(1); // 60000 > 50000 이라 두 번째 iteration 전에 stop
     const completed = logEntries().find((e) => e.event.type === "run-completed")!.event;
     expect(completed.type === "run-completed" && completed.scorecard.tokensSpent).toBe(60000);
@@ -157,5 +157,48 @@ describe("run loop with injected adapter", () => {
     const finals = entries.filter((e) => e.event.type === "run-completed");
     const last = finals[finals.length - 1].event;
     expect(last.type === "run-completed" && last.scorecard.passed).toBe(3);
+  });
+
+  it("resume that would immediately re-stop is refused before touching the log", async () => {
+    // 차터 자체에 max_tokens 가 선언된 경우 — CLI 캡과 달리 resume 에서도 살아있으므로
+    // 헤드룸 없는 resume 은 무진전 no-op 대신 fail-closed 로 거부돼야 한다.
+    const cappedPath = join(tmp, "capped.charter.yaml");
+    writeFileSync(cappedPath, CHARTER_YAML.replace("name: looptest", "name: capped").replace("budget:", "budget:\n  max_tokens: 50000"));
+    const big = mockAdapter(() => passStep(40000, 20000));
+    await runCommand(cappedPath, { repo: repoDir, adapter: big }); // 60000 > 50000 → budget-exceeded
+    const runFile = readdirSync(join(tmp, ".loopspec", "runs")).find((f) => f.startsWith("capped-"))!;
+    const run_id = runFile.replace(/^capped-/, "").replace(/\.jsonl$/, "");
+    const entriesBefore = readEntries(join(tmp, ".loopspec", "runs", runFile)).length;
+
+    const noBump = mockAdapter(passStep);
+    const code = await runCommand(cappedPath, { repo: repoDir, adapter: noBump, resume: run_id });
+    expect(code).toBe(1); // 캡 그대로 → 즉시 재중단될 상황 → 거부
+    expect(noBump.calls).toBe(0);
+    expect(readEntries(join(tmp, ".loopspec", "runs", runFile)).length).toBe(entriesBefore); // 로그 무변화
+
+    // 같은 run 도 +Nk 헤드룸을 주면 진행된다
+    const bumped = mockAdapter(passStep);
+    const code2 = await runCommand(cappedPath, { repo: repoDir, adapter: bumped, resume: run_id, tokenBump: "+10k" });
+    expect(code2).toBe(0);
+    expect(bumped.calls).toBe(2); // 남은 b, c 통과
+  });
+
+  it("resume resets the consecutive-failure streak so a tripped run can continue", async () => {
+    // 실패 어댑터로 max-consecutive-failures(3) 도달: a fail×2 → a escalate, b fail → cf=3 stop
+    const failing = mockAdapter(() => ({ ...passStep(10, 10), isError: true }));
+    await runCommand(charterPath, { repo: repoDir, adapter: failing });
+    const runFile = readdirSync(join(tmp, ".loopspec", "runs"))[0];
+    const run_id = runFile.replace(/^looptest-/, "").replace(/\.jsonl$/, "");
+
+    // resume: 스트릭이 리셋되어 남은 b, c 가 진행됨 (a 는 escalated 로 terminal 유지)
+    const passing = mockAdapter(passStep);
+    const code = await runCommand(charterPath, { repo: repoDir, adapter: passing, resume: run_id });
+    expect(passing.calls).toBe(2); // b 재시도 pass, c pass
+    expect(code).toBe(1); // a 가 escalated 라 수렴은 아님
+    const entries = readEntries(join(tmp, ".loopspec", "runs", runFile));
+    const finals = entries.filter((e) => e.event.type === "run-completed");
+    const last = finals[finals.length - 1].event;
+    expect(last.type === "run-completed" && last.scorecard.passed).toBe(2);
+    expect(last.type === "run-completed" && last.scorecard.escalated).toBe(1);
   });
 });

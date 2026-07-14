@@ -46,46 +46,65 @@ describe("parseTokenBump", () => {
   });
 });
 
+const FRESH = { tokens: 0, iterations: 0 };
+
 describe("applyOverrides", () => {
-  it("maxIterations replaces the charter cap", () => {
-    const { charter: eff, errors } = applyOverrides(charter, { maxIterations: 1 }, 0);
+  it("maxIterations is additive headroom: fresh run cap = N", () => {
+    const { charter: eff, errors } = applyOverrides(charter, { maxIterations: 1 }, FRESH);
     expect(errors).toEqual([]);
     expect(eff.budget.max_iterations).toBe(1);
     expect(charter.budget.max_iterations).toBe(4); // 원본 불변
   });
 
+  it("maxIterations on resume adds headroom above iterations already run", () => {
+    const { charter: eff } = applyOverrides(charter, { maxIterations: 3 }, { tokens: 0, iterations: 5 });
+    expect(eff.budget.max_iterations).toBe(8);
+  });
+
+  it("non-positive or non-integer maxIterations fails closed via errors", () => {
+    expect(applyOverrides(charter, { maxIterations: 0 }, FRESH).errors.length).toBe(1);
+    expect(applyOverrides(charter, { maxIterations: 1.5 }, FRESH).errors.length).toBe(1);
+    expect(applyOverrides(charter, { maxIterations: NaN }, FRESH).errors.length).toBe(1);
+  });
+
   it("tokenBump on a fresh run sets cap = N", () => {
-    const { charter: eff } = applyOverrides(charter, { tokenBump: 50000 }, 0);
+    const { charter: eff } = applyOverrides(charter, { tokenBump: "+50k" }, FRESH);
     expect(eff.budget.max_tokens).toBe(50000);
   });
 
   it("tokenBump on resume adds headroom above tokens already spent", () => {
-    const { charter: eff } = applyOverrides(charter, { tokenBump: 50000 }, 60000);
+    const { charter: eff } = applyOverrides(charter, { tokenBump: "+50k" }, { tokens: 60000, iterations: 0 });
     expect(eff.budget.max_tokens).toBe(110000);
   });
 
   it("tokenBump overrides a charter-declared max_tokens", () => {
     const declared: Charter = { ...charter, budget: { ...charter.budget, max_tokens: 10 } };
-    const { charter: eff } = applyOverrides(declared, { tokenBump: 500 }, 0);
+    const { charter: eff } = applyOverrides(declared, { tokenBump: "+500" }, FRESH);
     expect(eff.budget.max_tokens).toBe(500);
   });
 
+  it("malformed tokenBump fails closed via errors", () => {
+    const { errors } = applyOverrides(charter, { tokenBump: "50k" }, FRESH);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('"50k"');
+  });
+
   it("filter keeps charter order and only matching items", () => {
-    const { charter: eff, errors } = applyOverrides(charter, { filterIds: ["i2"] }, 0);
+    const { charter: eff, errors } = applyOverrides(charter, { filterIds: ["i2"] }, FRESH);
     expect(errors).toEqual([]);
     expect(eff.items.map((i) => i.id)).toEqual(["i2"]);
     expect(charter.items.length).toBe(2); // 원본 불변
   });
 
   it("filter with unknown id fails closed, listing known ids", () => {
-    const { errors } = applyOverrides(charter, { filterIds: ["nope"] }, 0);
+    const { errors } = applyOverrides(charter, { filterIds: ["nope"] }, FRESH);
     expect(errors.length).toBe(1);
     expect(errors[0]).toContain('"nope"');
     expect(errors[0]).toContain("i1, i2");
   });
 
   it("no overrides -> charter unchanged", () => {
-    const { charter: eff, errors } = applyOverrides(charter, {}, 0);
+    const { charter: eff, errors } = applyOverrides(charter, {}, FRESH);
     expect(errors).toEqual([]);
     expect(eff.budget).toEqual(charter.budget);
     expect(eff.items).toEqual(charter.items);

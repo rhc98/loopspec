@@ -1,5 +1,11 @@
 import type { RunLogEntry } from "./run-log.js";
-import { deriveState } from "./state.js";
+import { deriveState, type ItemState } from "./state.js";
+
+/** item 한 개의 상태 줄 — status 명령과 run --report-only 가 공유하는 포맷. */
+export function renderItemLine(it: ItemState): string {
+  const last = it.lastOutcome ? ` last=${it.lastOutcome}` : "";
+  return `  ${it.id.padEnd(16)} ${it.status.padEnd(12)} attempts=${it.attempts}${last}`;
+}
 
 /** run-log entries → 사람이 읽는 상태 리포트 (순수함수, I/O 없음). */
 export function renderStatus(entries: RunLogEntry[]): string {
@@ -14,8 +20,7 @@ export function renderStatus(entries: RunLogEntry[]): string {
   const counts: Record<string, number> = {};
   for (const it of state.items.values()) {
     counts[it.status] = (counts[it.status] ?? 0) + 1;
-    const last = it.lastOutcome ? ` last=${it.lastOutcome}` : "";
-    lines.push(`  ${it.id.padEnd(16)} ${it.status.padEnd(12)} attempts=${it.attempts}${last}`);
+    lines.push(renderItemLine(it));
   }
 
   const summary = ["pass", "fail", "escalated", "in-progress", "pending"]
