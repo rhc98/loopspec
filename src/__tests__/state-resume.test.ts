@@ -33,4 +33,18 @@ describe("deriveState resume semantics", () => {
     expect(after.consecutiveFailures).toBe(base.consecutiveFailures);
     expect(after.status).toBe("running");
   });
+
+  it("run-resumed flips a completed run back to running (budget-stopped run resume)", () => {
+    const sc = { total: 2, passed: 1, failed: 0, escalated: 0, budgetSpentUsd: 0, tokensSpent: 60000, iterations: 1 };
+    const s = deriveState(
+      log([
+        started,
+        { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
+        { type: "run-completed", scorecard: sc },
+        { type: "run-resumed" },
+      ]),
+    );
+    expect(s.status).toBe("running");
+    expect(s.items.get("i2")!.status).toBe("pending"); // 남은 일이 그대로 보임
+  });
 });

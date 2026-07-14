@@ -21,6 +21,7 @@ export interface Item {
 export interface Budget {
   max_budget_usd?: number;
   per_step_max_budget_usd?: number;
+  max_tokens?: number; // input+output 토큰 누적 캡 (cache 토큰 제외). 없으면 무제한.
   max_iterations: number;
   max_attempts_per_item: number;
   max_consecutive_failures: number;

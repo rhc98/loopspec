@@ -49,6 +49,7 @@ export function buildScorecard(state: RunState, charter: Charter): Scorecard {
     failed,
     escalated,
     budgetSpentUsd: state.budgetSpentUsd,
+    tokensSpent: state.tokensSpent,
     iterations: state.iterations,
   };
 }

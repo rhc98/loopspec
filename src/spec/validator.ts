@@ -34,6 +34,14 @@ export function validateCharter(raw: unknown): ValidationError[] {
     errors.push({ rule: "budget", message: "budget requires at least one of max_budget_usd or max_iterations (number)" });
   }
 
+  // rule 2b: max_tokens 는 선택이지만, 있으면 양의 유한수여야 함
+  if (isObject(budget) && budget["max_tokens"] !== undefined) {
+    const mt = budget["max_tokens"];
+    if (typeof mt !== "number" || !Number.isFinite(mt) || mt <= 0) {
+      errors.push({ rule: "budget", message: "budget.max_tokens must be a positive number" });
+    }
+  }
+
   // rule 3: readiness=L2 이면 verify.commands 비면 안 됨
   if (raw["readiness"] === "L2") {
     const verify = raw["verify"];

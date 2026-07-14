@@ -23,7 +23,7 @@ export function renderStatus(entries: RunLogEntry[]): string {
     .map((s) => `${s}=${counts[s]}`)
     .join("  ");
   lines.push(`summary: ${summary || "(no items)"}`);
-  lines.push(`iterations: ${state.iterations}   spent_usd: $${state.budgetSpentUsd}`);
+  lines.push(`iterations: ${state.iterations}   spent_usd: $${state.budgetSpentUsd}   tokens: ${state.tokensSpent}`);
 
   return lines.join("\n");
 }

@@ -1,5 +1,5 @@
 import type { RunLogEntry } from "./run-log.js";
-import { accountUsage } from "./budget.js";
+import { accountUsage, accountTokens } from "./budget.js";
 
 export type ItemStatus = "pending" | "in-progress" | "pass" | "fail" | "escalated";
 
@@ -15,6 +15,7 @@ export interface RunState {
   status: "running" | "completed";
   items: Map<string, ItemState>;
   budgetSpentUsd: number;
+  tokensSpent: number;
   iterations: number;
   consecutiveFailures: number;
 }
@@ -25,6 +26,7 @@ export interface Scorecard {
   failed: number;
   escalated: number;
   budgetSpentUsd: number;
+  tokensSpent: number;
   iterations: number;
 }
 
@@ -35,6 +37,7 @@ export function deriveState(entries: RunLogEntry[]): RunState {
     status: "running",
     items: new Map(),
     budgetSpentUsd: 0,
+    tokensSpent: 0,
     iterations: 0,
     consecutiveFailures: 0,
   };
@@ -80,6 +83,13 @@ export function deriveState(entries: RunLogEntry[]): RunState {
         }
         state.iterations += 1;
         state.budgetSpentUsd = accountUsage(state.budgetSpentUsd, e.usage);
+        state.tokensSpent = accountTokens(state.tokensSpent, e.usage);
+        break;
+      }
+      case "run-resumed": {
+        // 재개된 run 은 다시 running — budget/iteration stop 으로 completed 된 run 도
+        // 캡을 올려(resume + 오버라이드) 이어갈 수 있다.
+        state.status = "running";
         break;
       }
       case "item-escalated": {
