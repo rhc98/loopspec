@@ -67,6 +67,7 @@ More examples live in [`seeds/`](../seeds/).
 |---|---|---|---|
 | `max_iterations` | number | one of these two | hard cap on completed step count |
 | `max_budget_usd` | number | one of these two | hard cap on reported spend (USD) |
+| `max_tokens` | number | no | cumulative cap on `input_tokens + output_tokens` summed over step usage; cache tokens excluded; absent ⇒ no token cap. The CLI `+Nk` argument overrides it per-invocation (effective cap = tokens already spent + N) |
 | `per_step_max_budget_usd` | number | no | advisory per-step cap |
 | `max_attempts_per_item` | number | yes (engine) | retries before an item escalates |
 | `max_consecutive_failures` | number | yes (engine) | consecutive failures before the run stops |
@@ -88,7 +89,8 @@ run. The four rules:
 
 1. **`loopspec_version`** — present and a non-empty string.
 2. **`budget`** — a mapping with at least one of `max_budget_usd` or
-   `max_iterations` as a number (the run must be bounded somehow).
+   `max_iterations` as a number (the run must be bounded somehow). If
+   `max_tokens` is present it must be a positive number.
 3. **`verify`** — if `readiness: L2`, `verify.commands` must be a non-empty
    string array.
 4. **`items`** — a non-empty array; every item has a non-empty `id`,

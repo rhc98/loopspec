@@ -131,7 +131,21 @@ denylist: []
 | `loopspec status [name]` | 하나의 run에 대한 최신 run-log 렌더링 |
 | `loopspec stats [name]` | 일치하는 **모든** run-log 집계 — cross-run 수렴 텔레메트리 |
 | `loopspec install <source> [--registry <dir>] [--yes] [--force] [--report-only] [--dest <dir>]` | resolve → validate → scan → 동의 게이트 → 작성 + 신뢰 기록 |
-| `loopspec run <charter> [-C, --repo <dir>] [--resume <runId>] [--yes]` | 수렴형 스윕 실행 |
+| `loopspec run <charter> [+Nk] [-C, --repo <dir>] [--resume <runId>] [--yes] [--max-iter <n>] [--report-only] [--filter <ids>] [--agent <name>]` | 수렴형 스윕 실행 |
+
+`run` 플래그:
+
+- `+Nk` (예: `+50k`) — 이번 실행의 토큰 헤드룸. 유효 캡 = 이미 쓴 토큰 + N (input+output만,
+  cache 토큰 제외). 차터의 `budget.max_tokens`를 이번 실행에 한해 덮어씁니다. USD가 안 잡히는
+  구독 모드에서 실행을 바운드하는 주 수단.
+- `--max-iter <n>` — 이번 실행의 `budget.max_iterations` 오버라이드 (resume에서 올릴 때 유용).
+- `--report-only` — 무엇이 실행될지(유효 캡, 항목 상태, 다음 항목)만 출력하고 아무것도
+  실행/기록하지 않습니다.
+- `--filter <ids>` — 콤마 구분 item id만 실행 (정확 매칭, 모르는 id는 거부).
+- `--agent <name>` — step을 구동할 어댑터 (기본 `claude-code`).
+
+budget/iteration stop으로 끝난 run은 `--resume <runId>`에 `+Nk`나 `--max-iter`를 더해
+캡을 올려 이어갈 수 있습니다.
 
 (전역 설치(`npm install -g loopspec`)했다면 `loopspec <command>`를 그대로 쓰면 됩니다.
 소스 체크아웃에서는 `validate`, `run`, `stats`에 `npm run` 스크립트가 있고
@@ -210,9 +224,12 @@ npm test                              # vitest, 유닛 테스트 84개, 결정�
 - **Ship 4 — CLI 패키징 & npm 배포** ✅ `tsc` 빌드(`tsconfig.build.json` → `dist/`),
   `bin`이 컴파일된 `dist/cli/index.js`를 가리키고, 런타임 의존성이 `dependencies`로
   분리되어 `npm install -g loopspec`으로 설치 가능합니다.
+- **Ship 5 — run 플래그** ✅ `+Nk` 토큰 헤드룸(`budget.max_tokens` 신설 — 구독 모드
+  USD 과소집계 갭의 보완), `--max-iter`, `--report-only`, `--filter`, `--agent`
+  (어댑터 레지스트리). 어댑터 주입으로 풀 루프 통합 테스트가 처음으로 가능해졌습니다.
 - **알려진 갭** — `run --repo`는 여전히 fixture 중심입니다(차터 레벨 repo 필드 없음); `claude`가
-  `total_cost_usd`를 보고하지 않는 순수 구독 모드에서는 예산 계산이 과소 집계됩니다;
-  `status`/`stats` 출력은 아직 plain-text뿐입니다.
+  `total_cost_usd`를 보고하지 않는 순수 구독 모드에서는 USD 예산 계산이 과소 집계됩니다
+  (토큰 캡 `+Nk`/`max_tokens`로 보완 가능); `status`/`stats` 출력은 아직 plain-text뿐입니다.
 - **Ship 2b (deferred)** — 원격 fetch를 지원하는 공개 공유 차터 레지스트리, 로컬 trust ledger를
   넘어서는 차터 서명/체크섬, 샌드박스화된 verify 실행.
 

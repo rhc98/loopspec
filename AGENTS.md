@@ -190,7 +190,17 @@ small, so the orchestrator — not the model — owns convergence and stopping.
   (`src/core/scan.ts`) is heuristic — a clean scan is *not* a safety proof.
   Deferred to Ship 2b: the public `awesome-loops` repo + remote fetch, and
   charter signing/checksums; sandboxed verify execution is deferred further.
-- Out of scope for now: `run` flags `+Nk` / `--max-iter` / `--report-only` /
-  `--filter` / `--agent`.
+- `run` flags shipped in 0.2.0: `+Nk` (token headroom; effective cap = tokens
+  already spent + N, input+output only), `--max-iter` (per-invocation
+  `max_iterations` override), `--report-only` (plan print, zero side effects),
+  `--filter` (exact item-id subset, runtime-only — `run-started` still logs the
+  full item list), `--agent` (adapter registry in `src/adapters/registry.ts`;
+  only `claude-code` registered). CLI overrides are folded into an *effective
+  charter* by the pure `applyOverrides` (`src/core/overrides.ts`) — controller
+  signatures unchanged. `RunOptions.adapter` is a test seam that injects a mock
+  adapter, enabling full-loop integration tests (`src/__tests__/run-loop.test.ts`).
+  Note: `run-resumed` now flips derived status back to `running`, so a
+  budget/iteration-stopped run can be resumed with fresh headroom; the
+  "already completed" early-return only fires when all items are terminal.
 
 <!-- MANUAL: Add long-term project notes below this line. -->

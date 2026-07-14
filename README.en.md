@@ -138,7 +138,24 @@ rules, and the trust model: [`spec/loopspec-1.0.md`](spec/loopspec-1.0.md).
 | `loopspec status [name]` | Render the latest run-log for one run |
 | `loopspec stats [name]` | Aggregate **all** matching run-logs — cross-run convergence telemetry |
 | `loopspec install <source> [--registry <dir>] [--yes] [--force] [--report-only] [--dest <dir>]` | Resolve → validate → scan → consent gate → write + record trust |
-| `loopspec run <charter> [-C, --repo <dir>] [--resume <runId>] [--yes]` | Run the convergent sweep |
+| `loopspec run <charter> [+Nk] [-C, --repo <dir>] [--resume <runId>] [--yes] [--max-iter <n>] [--report-only] [--filter <ids>] [--agent <name>]` | Run the convergent sweep |
+
+`run` flags:
+
+- `+Nk` (e.g. `+50k`) — token headroom for this invocation. Effective cap =
+  tokens already spent + N (input+output only, cache tokens excluded). Overrides
+  the charter's `budget.max_tokens` for this invocation. The main way to bound a
+  run in subscription mode where USD is not reported.
+- `--max-iter <n>` — override `budget.max_iterations` for this invocation
+  (useful for raising the cap on resume).
+- `--report-only` — print what would run (effective caps, item statuses, next
+  item) and execute nothing, write nothing.
+- `--filter <ids>` — run only the comma-separated item ids (exact match;
+  unknown ids are refused).
+- `--agent <name>` — adapter that drives steps (default `claude-code`).
+
+A run that stopped on budget/iterations can be continued past the old cap with
+`--resume <runId>` plus a fresh `+Nk` or `--max-iter`.
 
 (With a global install (`npm install -g loopspec`), just use `loopspec
 <command>` directly. In a source checkout, `validate`, `run`, and `stats` have
@@ -227,10 +244,14 @@ numbering):
   (`tsconfig.build.json` → `dist/`), `bin` points at the compiled
   `dist/cli/index.js`, runtime deps moved to `dependencies`, installable via
   `npm install -g loopspec`.
+- **Ship 5 — run flags** ✅ `+Nk` token headroom (new `budget.max_tokens` —
+  compensates the subscription-mode USD under-count gap), `--max-iter`,
+  `--report-only`, `--filter`, `--agent` (adapter registry). Adapter injection
+  makes full-loop integration tests possible for the first time.
 - **Known gaps** — `run --repo` is still fixture-oriented (no charter-level
-  repo field); budget accounting under-counts when `claude` reports no
-  `total_cost_usd` (pure subscription mode); `status`/`stats` output is
-  plain-text only.
+  repo field); USD budget accounting under-counts when `claude` reports no
+  `total_cost_usd` (pure subscription mode — the `+Nk`/`max_tokens` token cap
+  compensates); `status`/`stats` output is plain-text only.
 - **Ship 2b (deferred)** — a public shared-charter registry with remote
   fetch, charter signing/checksums beyond the local trust ledger, and
   sandboxed verify execution.
