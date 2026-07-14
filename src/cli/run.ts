@@ -5,10 +5,11 @@ import { randomUUID } from "crypto";
 import yaml from "js-yaml";
 import { validateCharter } from "../spec/validator.js";
 import type { Charter } from "../spec/types.js";
-import { preflight, runStep } from "../adapters/claude-code.js";
+import { getAdapter, knownAgents, type Adapter } from "../adapters/registry.js";
 import { appendEntry, readEntries } from "../core/run-log.js";
-import { deriveState, type Scorecard } from "../core/state.js";
+import { deriveState, type RunState, type Scorecard } from "../core/state.js";
 import { pick, attemptGuard, stopCheck, buildScorecard } from "../core/controller.js";
+import { applyOverrides, parseTokenBump, type RunOverrides } from "../core/overrides.js";
 import { buildStepPrompt } from "../core/prompt.js";
 import { stepChangedFiles, scopeViolations } from "../core/scope.js";
 import { scanCharter, hasDanger, renderFindings } from "../core/scan.js";
@@ -21,6 +22,12 @@ interface RunOptions {
   repo: string;
   resume?: string; // run_id of an existing run-log to continue
   yes?: boolean; // trust-gate override for DANGER findings
+  maxIter?: number; // --max-iter: budget.max_iterations 오버라이드
+  reportOnly?: boolean; // --report-only: 실행 계획만 출력, 아무것도 실행/기록 안 함
+  filter?: string; // --filter: 콤마 구분 item id 목록 (정확 매칭)
+  agent?: string; // --agent: 어댑터 레지스트리 키 (기본 claude-code)
+  tokenBump?: string; // "+Nk" positional (예: +50k)
+  adapter?: Adapter; // 테스트 심 — 레지스트리 조회를 우회해 어댑터 주입
 }
 
 function printScorecard(sc: Scorecard, logPath: string): void {
@@ -31,6 +38,7 @@ function printScorecard(sc: Scorecard, logPath: string): void {
   console.log(`  escalated: ${sc.escalated}`);
   console.log(`  iterations:${sc.iterations}`);
   console.log(`  spent_usd: $${sc.budgetSpentUsd}`);
+  console.log(`  tokens:    ${sc.tokensSpent}`);
   console.log(`  log:       ${logPath}\n`);
 }
 
@@ -70,11 +78,111 @@ function loadAndValidate(charterPath: string): { charter: Charter; raw: string }
   return { charter: parsed as Charter, raw: text };
 }
 
+/** --report-only 출력: 무엇이 실행될지 보여주고 아무것도 실행/기록하지 않는다. */
+function printReport(
+  charter: Charter,
+  effective: Charter,
+  state: RunState,
+  repoDir: string,
+  findings: ReturnType<typeof scanCharter>,
+): void {
+  console.log(`\n=== loopspec report-only: ${charter.name} ===`);
+  console.log(`Goal:  ${charter.goal}`);
+  console.log(`Repo:  ${repoDir}`);
+  const caps = [
+    `iterations=${effective.budget.max_iterations}`,
+    `tokens=${effective.budget.max_tokens ?? "(none)"}`,
+    `usd=${effective.budget.max_budget_usd ?? "(none)"}`,
+    `attempts/item=${effective.budget.max_attempts_per_item}`,
+  ];
+  console.log(`Caps:  ${caps.join("  ")}`);
+  if (findings.length > 0) {
+    console.log(`Scan:`);
+    console.log(renderFindings(findings));
+  }
+  console.log(`Items:`);
+  for (const item of effective.items) {
+    const it = state.items.get(item.id);
+    console.log(`  ${item.id}: ${it?.status ?? "pending"} (attempts ${it?.attempts ?? 0})`);
+  }
+  const next = pick(state, effective);
+  console.log(`Next:  ${next?.id ?? "(none)"}`);
+  const { stop, reason } = stopCheck(state, effective);
+  if (stop) console.log(`Stop:  would stop immediately (${reason})`);
+  console.log(`\n(report-only — nothing executed, nothing written)`);
+}
+
 export async function runCommand(charterPath: string, opts: RunOptions): Promise<number> {
   const { charter, raw } = loadAndValidate(charterPath);
 
-  // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
+  // 어댑터 해석 — 모르는 이름은 fail-closed
+  const adapter = opts.adapter ?? getAdapter(opts.agent ?? "claude-code");
+  if (!adapter) {
+    console.error(`✗ unknown agent "${opts.agent}". Known agents: ${knownAgents().join(", ")}.`);
+    return 1;
+  }
+
+  // 오버라이드 파싱 — fail-closed
+  const overrides: RunOverrides = {};
+  if (opts.tokenBump !== undefined) {
+    const bump = parseTokenBump(opts.tokenBump);
+    if (bump === null) {
+      console.error(`✗ invalid token budget "${opts.tokenBump}" — expected +N or +Nk (e.g. +50k)`);
+      return 1;
+    }
+    overrides.tokenBump = bump;
+  }
+  if (opts.maxIter !== undefined) {
+    if (!Number.isInteger(opts.maxIter) || opts.maxIter <= 0) {
+      console.error(`✗ invalid --max-iter "${opts.maxIter}" — expected a positive integer`);
+      return 1;
+    }
+    overrides.maxIterations = opts.maxIter;
+  }
+  if (opts.filter !== undefined) {
+    overrides.filterIds = opts.filter.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  const repoDir = resolve(opts.repo);
+  const run_id = opts.resume ?? randomUUID();
+  const logPath = resolve(runsDir(), `${charter.name}-${run_id}.jsonl`);
+
+  // resume 면 기존 로그에서 prior state 파생 (+Nk 의 토큰 기준점으로도 사용)
+  let prior: RunState | undefined;
+  if (opts.resume) {
+    const existing = readEntries(logPath);
+    if (existing.length === 0) {
+      console.error(`✗ no run-log to resume at ${logPath}`);
+      return 1;
+    }
+    prior = deriveState(existing);
+    // 모든 항목이 terminal 이면 더 할 일이 없다. budget/iteration stop 으로 completed 된
+    // run 은 non-terminal 항목이 남아 있으므로 resume(+오버라이드 헤드룸) 가능.
+    if (prior.status === "completed" && stopCheck(prior, charter).reason === "all-items-complete") {
+      console.log(`run ${run_id.slice(0, 8)} already completed.`);
+      const sc = buildScorecard(prior, charter);
+      printScorecard(sc, logPath);
+      return sc.escalated === 0 && sc.failed === 0 ? 0 : 1;
+    }
+  }
+
+  const applied = applyOverrides(charter, overrides, prior?.tokensSpent ?? 0);
+  if (applied.errors.length > 0) {
+    console.error(`✗ invalid overrides:`);
+    for (const e of applied.errors) console.error(`  ${e}`);
+    return 1;
+  }
+  const effective = applied.charter;
+
   const findings = scanCharter(charter);
+
+  // report-only — 게이트/preflight/로그 이전에 계획만 출력하고 종료 (install --report-only 선례)
+  if (opts.reportOnly) {
+    printReport(charter, effective, prior ?? deriveState([]), repoDir, findings);
+    return 0;
+  }
+
+  // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
   if (hasDanger(findings)) {
     const trusted = isConsented(process.cwd(), charterChecksum(raw));
     if (!trusted && !opts.yes) {
@@ -89,31 +197,20 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     console.log(renderFindings(findings));
   }
 
-  await preflight();
-  const repoDir = resolve(opts.repo);
-
-  const run_id = opts.resume ?? randomUUID();
-  const logPath = resolve(runsDir(), `${charter.name}-${run_id}.jsonl`);
-
-  if (opts.resume) {
-    const existing = readEntries(logPath);
-    if (existing.length === 0) {
-      console.error(`✗ no run-log to resume at ${logPath}`);
-      return 1;
-    }
-    const prior = deriveState(existing);
-    if (prior.status === "completed") {
-      console.log(`run ${run_id.slice(0, 8)} already completed.`);
-      const sc = buildScorecard(prior, charter);
-      printScorecard(sc, logPath);
-      return sc.escalated === 0 && sc.failed === 0 ? 0 : 1;
-    }
-  }
+  await adapter.preflight();
 
   console.log(`\n=== loopspec ${opts.resume ? "resume" : "run"}: ${charter.name} (${run_id.slice(0, 8)}) ===`);
   console.log(`Goal:  ${charter.goal}`);
+  console.log(`Agent: ${adapter.name}`);
   console.log(`Repo:  ${repoDir}`);
-  console.log(`Items: ${charter.items.map((i) => i.id).join(", ")}`);
+  console.log(`Items: ${effective.items.map((i) => i.id).join(", ")}`);
+  if (Object.keys(overrides).length > 0) {
+    const parts: string[] = [];
+    if (overrides.maxIterations !== undefined) parts.push(`max-iter=${overrides.maxIterations}`);
+    if (overrides.tokenBump !== undefined) parts.push(`tokens=+${overrides.tokenBump} (cap ${effective.budget.max_tokens})`);
+    if (overrides.filterIds !== undefined) parts.push(`filter=${overrides.filterIds.join(",")}`);
+    console.log(`Overrides: ${parts.join("  ")}`);
+  }
   console.log(`Log:   ${logPath}\n`);
 
   if (opts.resume) {
@@ -129,16 +226,16 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
   let state = deriveState(readEntries(logPath));
 
   while (true) {
-    const { stop, reason } = stopCheck(state, charter);
+    const { stop, reason } = stopCheck(state, effective);
     if (stop) {
       console.log(`-- stop: ${reason}`);
       break;
     }
 
-    const item = pick(state, charter);
+    const item = pick(state, effective);
     if (!item) break;
 
-    if (!attemptGuard(state, charter, item.id)) {
+    if (!attemptGuard(state, effective, item.id)) {
       console.log(`[${item.id}] max_attempts reached -> escalate`);
       appendEntry(logPath, run_id, { type: "item-escalated", item_id: item.id, reason: "max_attempts" });
       state = deriveState(readEntries(logPath));
@@ -152,11 +249,11 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     // step 시작 시점의 dirty 파일(이전 통과 아이템 변경분)을 baseline 으로 기록
     const before = await gitDiffNames(repoDir);
 
-    const prompt = buildStepPrompt(item, charter, state);
-    const result = await runStep({
+    const prompt = buildStepPrompt(item, effective, state);
+    const result = await adapter.runStep({
       prompt,
       allowedTools: ALLOWED_TOOLS,
-      disallowedTools: charter.denylist ?? [],
+      disallowedTools: effective.denylist ?? [],
       maxTurns: MAX_TURNS,
       cwd: repoDir,
     });
@@ -180,7 +277,7 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
       continue;
     }
 
-    const outcome = result.isError ? "fail" : await runVerify(charter.verify?.commands ?? [], repoDir);
+    const outcome = result.isError ? "fail" : await runVerify(effective.verify?.commands ?? [], repoDir);
     console.log(`[${item.id}] tools=[${result.toolCalls.join(",")}] outcome=${outcome}`);
     appendEntry(logPath, run_id, {
       type: "attempt-completed",
@@ -192,7 +289,7 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     state = deriveState(readEntries(logPath));
   }
 
-  const scorecard = buildScorecard(state, charter);
+  const scorecard = buildScorecard(state, effective);
   appendEntry(logPath, run_id, { type: "run-completed", scorecard });
   printScorecard(scorecard, logPath);
 
