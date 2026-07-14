@@ -168,15 +168,15 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 - `commander` — CLI parsing.
 - `execa` — spawning `claude` and `git`.
 - `js-yaml` — charter parsing.
-- `tsx` — TypeScript runner (dev + bin).
+- `tsx` — TypeScript runner (dev only; the shipped `bin` is compiled JS).
 - `vitest` — ESM-native unit tests.
-- `typescript` — typecheck only (no build step shipped yet).
+- `typescript` — typecheck (`tsc --noEmit`, root tsconfig covers the full tree)
+  and build (`npm run build` → `tsc -p tsconfig.build.json`, emits `src/` minus
+  `__tests__` to `dist/`; `bin` points at `dist/cli/index.js`). Runtime deps
+  (`commander`, `execa`, `js-yaml`) live in `dependencies`; everything else is dev.
 
 ## Known Gaps
 
-- No `build` script and no compiled `dist/`; `bin` points at the `.ts` entry and
-  relies on `tsx`, so the package is not npm-publishable yet (runtime deps also
-  still live in `devDependencies`).
 - `run --repo` defaults to `process.cwd()`; the engine is still fixture-oriented
   (no charter-level repo field).
 - Budget accounting only sees `total_cost_usd` when claude reports it; in pure

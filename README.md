@@ -32,7 +32,17 @@ LLM에게 넓은 편집 권한을 주고 알아서 잘하길 바라는 방식은
   실제 인젝션 벡터가 될 수 있어, `loopspec install`은 위험한 패턴을 스캔하고 신뢰할 수 없는 것을
   쓰거나 실행하기 전에 명시적 동의를 요구합니다 (아래에서 자세히 설명합니다).
 
-## 빠른 시작
+## 설치
+
+```bash
+npm install -g loopspec
+loopspec --version
+loopspec init my-sweep   # 시작용 차터 스캐폴드
+```
+
+## 빠른 시작 (소스에서)
+
+아래는 저장소의 번들 fixture를 사용하므로 소스 체크아웃 기준입니다:
 
 ```bash
 git clone https://github.com/rhc98/loopspec.git
@@ -123,8 +133,9 @@ denylist: []
 | `loopspec install <source> [--registry <dir>] [--yes] [--force] [--report-only] [--dest <dir>]` | resolve → validate → scan → 동의 게이트 → 작성 + 신뢰 기록 |
 | `loopspec run <charter> [-C, --repo <dir>] [--resume <runId>] [--yes]` | 수렴형 스윕 실행 |
 
-(`validate`, `run`, `stats`는 `npm run` 스크립트가 있습니다, 예: `npm run validate --
-<charter>`. `init`, `status`, `install`은 아직 없습니다 — 직접 호출하세요:
+(전역 설치(`npm install -g loopspec`)했다면 `loopspec <command>`를 그대로 쓰면 됩니다.
+소스 체크아웃에서는 `validate`, `run`, `stats`에 `npm run` 스크립트가 있고
+(예: `npm run validate -- <charter>`), 나머지 명령은 직접 호출하세요:
 `./node_modules/.bin/tsx src/cli/index.ts <command> ...`.)
 
 ## 신뢰 및 보안 모델
@@ -196,8 +207,10 @@ npm test                              # vitest, 유닛 테스트 84개, 결정�
   (`install`, trust ledger, run-time 신뢰 게이트). 후속 리뷰에서 스캐너 커버리지 갭 여러 개를
   닫았습니다 (bare 인터프리터 eval, 스크립트 실행, 로컬 설치, raw-socket egress, git-hook
   하이재킹).
-- **알려진 갭** — 아직 build/`dist` 스텝이 없습니다(`bin`은 `tsx`로 `.ts` 엔트리를 실행합니다);
-  `run --repo`는 여전히 fixture 중심입니다(차터 레벨 repo 필드 없음); `claude`가
+- **Ship 4 — CLI 패키징 & npm 배포** ✅ `tsc` 빌드(`tsconfig.build.json` → `dist/`),
+  `bin`이 컴파일된 `dist/cli/index.js`를 가리키고, 런타임 의존성이 `dependencies`로
+  분리되어 `npm install -g loopspec`으로 설치 가능합니다.
+- **알려진 갭** — `run --repo`는 여전히 fixture 중심입니다(차터 레벨 repo 필드 없음); `claude`가
   `total_cost_usd`를 보고하지 않는 순수 구독 모드에서는 예산 계산이 과소 집계됩니다;
   `status`/`stats` 출력은 아직 plain-text뿐입니다.
 - **Ship 2b (deferred)** — 원격 fetch를 지원하는 공개 공유 차터 레지스트리, 로컬 trust ledger를

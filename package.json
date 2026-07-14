@@ -2,6 +2,16 @@
   "name": "loopspec",
   "version": "0.1.0",
   "description": "Convergent sweep engine for bounded, auditable LLM automation over a YAML charter",
+  "keywords": [
+    "cli",
+    "llm",
+    "automation",
+    "agent",
+    "claude-code",
+    "yaml",
+    "charter",
+    "convergence"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,8 +23,14 @@
   },
   "type": "module",
   "bin": {
-    "loopspec": "src/cli/index.ts"
+    "loopspec": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.en.md",
+    "spec/loopspec-1.0.md",
+    "seeds"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -22,17 +38,21 @@
     "spike": "tsx spike/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm test && npm run typecheck && npm run build",
     "fixtures:init": "tsx scripts/init-fixtures.ts",
     "validate": "tsx src/cli/index.ts validate",
     "run": "tsx src/cli/index.ts run",
     "stats": "tsx src/cli/index.ts stats"
   },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "execa": "^9.5.2",
+    "js-yaml": "^4.1.0"
+  },
   "devDependencies": {
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "js-yaml": "^4.1.0",
-    "execa": "^9.5.2",
-    "commander": "^12.1.0",
     "vitest": "^2.1.8",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.7"

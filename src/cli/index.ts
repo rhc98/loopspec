@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runCommand } from "./run.js";
 import { validateCommand } from "./validate.js";
@@ -7,9 +8,11 @@ import { statusCommand } from "./status.js";
 import { statsCommand } from "./stats.js";
 import { installCommand } from "./install.js";
 
+const pkg = createRequire(import.meta.url)("../../package.json") as { version: string };
+
 const program = new Command();
 
-program.name("loopspec").description("Convergent sweep engine").version("1.0.0");
+program.name("loopspec").description("Convergent sweep engine").version(pkg.version);
 
 program
   .command("validate")

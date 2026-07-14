@@ -37,7 +37,17 @@ convergence and stopping.
   patterns and requires explicit consent before writing or running anything
   untrusted (details below).
 
-## Quick start
+## Install
+
+```bash
+npm install -g loopspec
+loopspec --version
+loopspec init my-sweep   # scaffold a starter charter
+```
+
+## Quick start (from source)
+
+The steps below use the repo's bundled fixtures, so they assume a source checkout:
 
 ```bash
 git clone https://github.com/rhc98/loopspec.git
@@ -130,9 +140,10 @@ rules, and the trust model: [`spec/loopspec-1.0.md`](spec/loopspec-1.0.md).
 | `loopspec install <source> [--registry <dir>] [--yes] [--force] [--report-only] [--dest <dir>]` | Resolve → validate → scan → consent gate → write + record trust |
 | `loopspec run <charter> [-C, --repo <dir>] [--resume <runId>] [--yes]` | Run the convergent sweep |
 
-(`validate`, `run`, and `stats` have `npm run` scripts, e.g. `npm run validate
--- <charter>`. `init`, `status`, and `install` don't yet — call them directly:
-`./node_modules/.bin/tsx src/cli/index.ts <command> ...`.)
+(With a global install (`npm install -g loopspec`), just use `loopspec
+<command>` directly. In a source checkout, `validate`, `run`, and `stats` have
+`npm run` scripts (e.g. `npm run validate -- <charter>`); call the other
+commands directly: `./node_modules/.bin/tsx src/cli/index.ts <command> ...`.)
 
 ## Trust & security model
 
@@ -212,9 +223,12 @@ numbering):
   (`install`, trust ledger, run-time trust gate). A follow-up review closed
   several scanner-coverage gaps (bare interpreter eval, script execution,
   local installs, raw-socket egress, git-hook hijacking).
-- **Known gaps** — no build/`dist` step yet (`bin` runs the `.ts` entry via
-  `tsx`); `run --repo` is still fixture-oriented (no charter-level repo
-  field); budget accounting under-counts when `claude` reports no
+- **Ship 4 — CLI packaging & npm release** ✅ `tsc` build
+  (`tsconfig.build.json` → `dist/`), `bin` points at the compiled
+  `dist/cli/index.js`, runtime deps moved to `dependencies`, installable via
+  `npm install -g loopspec`.
+- **Known gaps** — `run --repo` is still fixture-oriented (no charter-level
+  repo field); budget accounting under-counts when `claude` reports no
   `total_cost_usd` (pure subscription mode); `status`/`stats` output is
   plain-text only.
 - **Ship 2b (deferred)** — a public shared-charter registry with remote
