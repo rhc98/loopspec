@@ -33,4 +33,44 @@ describe("deriveState resume semantics", () => {
     expect(after.consecutiveFailures).toBe(base.consecutiveFailures);
     expect(after.status).toBe("running");
   });
+
+  it("run-resumed flips a completed run back to running (budget-stopped run resume)", () => {
+    const sc = { total: 2, passed: 1, failed: 0, escalated: 0, budgetSpentUsd: 0, tokensSpent: 60000, iterations: 1 };
+    const s = deriveState(
+      log([
+        started,
+        { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
+        { type: "run-completed", scorecard: sc },
+        { type: "run-resumed" },
+      ]),
+    );
+    expect(s.status).toBe("running");
+    expect(s.items.get("i2")!.status).toBe("pending"); // 남은 일이 그대로 보임
+  });
+
+  it("run-resumed resets the consecutive-failure streak (operator intervention)", () => {
+    const s = deriveState(
+      log([
+        started,
+        { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "fail" },
+        { type: "attempt-completed", item_id: "i2", attempt: 1, outcome: "fail" },
+        { type: "run-resumed" },
+      ]),
+    );
+    expect(s.consecutiveFailures).toBe(0);
+    expect(s.items.get("i1")!.status).toBe("fail"); // item 상태는 보존
+  });
+
+  it("attempt events for ids missing from run-started are tracked lazily", () => {
+    const s = deriveState(
+      log([
+        { type: "run-started", charter: "c", run_id: "r", items: ["i1"] }, // 필터된 run
+        { type: "run-resumed" },
+        { type: "attempt-started", item_id: "i9", attempt: 1 }, // 넓힌 필터로 resume
+        { type: "attempt-completed", item_id: "i9", attempt: 1, outcome: "pass" },
+      ]),
+    );
+    expect(s.items.get("i9")!.status).toBe("pass");
+    expect(s.items.get("i9")!.attempts).toBe(1);
+  });
 });

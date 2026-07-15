@@ -64,11 +64,22 @@ program
   .command("run")
   .description("Run the convergent sweep over a charter")
   .argument("<charter>", "path to charter YAML")
+  .argument("[tokenBump]", "extra token budget for this invocation, e.g. +50k")
   .option("-C, --repo <dir>", "target repository directory", process.cwd())
   .option("--resume <runId>", "resume an existing run-log instead of starting fresh")
   .option("--yes", "override the trust gate for DANGER-level findings")
-  .action(async (charter: string, opts: { repo: string; resume?: string; yes?: boolean }) => {
-    process.exit(await runCommand(charter, { repo: opts.repo, resume: opts.resume, yes: opts.yes }));
-  });
+  .option("--max-iter <n>", "override budget.max_iterations for this invocation", (v: string) => parseInt(v, 10))
+  .option("--report-only", "print what would run; execute nothing, write nothing")
+  .option("--filter <ids>", "comma-separated item ids to run (exact match)")
+  .option("--agent <name>", "adapter that drives steps", "claude-code")
+  .action(
+    async (
+      charter: string,
+      tokenBump: string | undefined,
+      opts: { repo: string; resume?: string; yes?: boolean; maxIter?: number; reportOnly?: boolean; filter?: string; agent?: string },
+    ) => {
+      process.exit(await runCommand(charter, { ...opts, tokenBump }));
+    },
+  );
 
 program.parseAsync();

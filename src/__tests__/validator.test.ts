@@ -34,6 +34,22 @@ describe("validateCharter", () => {
     expect(validateCharter(ok).some((e) => e.rule === "budget")).toBe(false);
   });
 
+  it("rule 2b: non-numeric max_tokens -> error", () => {
+    const bad = { ...valid, budget: { ...valid.budget, max_tokens: "lots" } };
+    expect(validateCharter(bad).some((e) => e.rule === "budget")).toBe(true);
+  });
+
+  it("rule 2b: non-positive max_tokens -> error", () => {
+    const bad = { ...valid, budget: { ...valid.budget, max_tokens: 0 } };
+    expect(validateCharter(bad).some((e) => e.rule === "budget")).toBe(true);
+  });
+
+  it("rule 2b: positive max_tokens is accepted; omitting it stays valid", () => {
+    const ok = { ...valid, budget: { ...valid.budget, max_tokens: 50000 } };
+    expect(validateCharter(ok)).toEqual([]);
+    expect(validateCharter(valid)).toEqual([]);
+  });
+
   it("rule 3: L2 with empty verify.commands -> error", () => {
     const bad = { ...valid, readiness: "L2", verify: { commands: [] } };
     const errs = validateCharter(bad);

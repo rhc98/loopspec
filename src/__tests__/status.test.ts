@@ -20,7 +20,7 @@ describe("renderStatus", () => {
         started,
         { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
         { type: "item-escalated", item_id: "i2", reason: "x" },
-        { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0, iterations: 1 } },
+        { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0, tokensSpent: 0, iterations: 1 } },
       ]),
     );
     expect(out).toContain("i1");

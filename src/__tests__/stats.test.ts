@@ -24,7 +24,7 @@ const runA = run("aaaa1111-zzzz", [
   { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass", usage: cost(0.1) },
   { type: "attempt-started", item_id: "i2", attempt: 1 },
   { type: "attempt-completed", item_id: "i2", attempt: 1, outcome: "pass", usage: cost(0.05) },
-  { type: "run-completed", scorecard: { total: 2, passed: 2, failed: 0, escalated: 0, budgetSpentUsd: 0.15, iterations: 2 } },
+  { type: "run-completed", scorecard: { total: 2, passed: 2, failed: 0, escalated: 0, budgetSpentUsd: 0.15, tokensSpent: 0, iterations: 2 } },
 ]);
 
 // Run B — 부분 수렴: i1 은 2회만에 pass, i2 는 scope 위반 후 escalate.
@@ -39,7 +39,7 @@ const runB = run("bbbb2222-zzzz", [
   { type: "attempt-started", item_id: "i2", attempt: 1 },
   { type: "scope-violated", item_id: "i2", files: ["x.ts"] },
   { type: "item-escalated", item_id: "i2", reason: "scope-violation" },
-  { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0.06, iterations: 2 } },
+  { type: "run-completed", scorecard: { total: 2, passed: 1, failed: 0, escalated: 1, budgetSpentUsd: 0.06, tokensSpent: 0, iterations: 2 } },
 ]);
 
 describe("computeRunStats", () => {
@@ -105,7 +105,7 @@ describe("computeStats (cross-run)", () => {
       { type: "attempt-started", item_id: "i1", attempt: 1 },
       { type: "denylist-blocked", item_id: "i1", tools: ["Bash"] },
       { type: "attempt-completed", item_id: "i1", attempt: 1, outcome: "pass" },
-      { type: "run-completed", scorecard: { total: 1, passed: 1, failed: 0, escalated: 0, budgetSpentUsd: 0, iterations: 1 } },
+      { type: "run-completed", scorecard: { total: 1, passed: 1, failed: 0, escalated: 0, budgetSpentUsd: 0, tokensSpent: 0, iterations: 1 } },
     ]);
     expect(computeStats([blocked]).denylistBlocks).toBe(1);
   });

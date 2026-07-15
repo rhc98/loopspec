@@ -5,10 +5,12 @@ import { randomUUID } from "crypto";
 import yaml from "js-yaml";
 import { validateCharter } from "../spec/validator.js";
 import type { Charter } from "../spec/types.js";
-import { preflight, runStep } from "../adapters/claude-code.js";
+import { getAdapter, knownAgents, type Adapter } from "../adapters/registry.js";
 import { appendEntry, readEntries } from "../core/run-log.js";
-import { deriveState, type Scorecard } from "../core/state.js";
+import { deriveState, type RunState, type Scorecard } from "../core/state.js";
 import { pick, attemptGuard, stopCheck, buildScorecard } from "../core/controller.js";
+import { applyOverrides, describeOverrides, type RunOverrides } from "../core/overrides.js";
+import { renderItemLine } from "../core/status.js";
 import { buildStepPrompt } from "../core/prompt.js";
 import { stepChangedFiles, scopeViolations } from "../core/scope.js";
 import { scanCharter, hasDanger, renderFindings } from "../core/scan.js";
@@ -21,6 +23,12 @@ interface RunOptions {
   repo: string;
   resume?: string; // run_id of an existing run-log to continue
   yes?: boolean; // trust-gate override for DANGER findings
+  maxIter?: number; // --max-iter: budget.max_iterations 오버라이드
+  reportOnly?: boolean; // --report-only: 실행 계획만 출력, 아무것도 실행/기록 안 함
+  filter?: string; // --filter: 콤마 구분 item id 목록 (정확 매칭)
+  agent?: string; // --agent: 어댑터 레지스트리 키 (기본 claude-code)
+  tokenBump?: string; // "+Nk" positional (예: +50k)
+  adapter?: Adapter; // 테스트 심 — 레지스트리 조회를 우회해 어댑터 주입
 }
 
 function printScorecard(sc: Scorecard, logPath: string): void {
@@ -31,6 +39,7 @@ function printScorecard(sc: Scorecard, logPath: string): void {
   console.log(`  escalated: ${sc.escalated}`);
   console.log(`  iterations:${sc.iterations}`);
   console.log(`  spent_usd: $${sc.budgetSpentUsd}`);
+  console.log(`  tokens:    ${sc.tokensSpent}`);
   console.log(`  log:       ${logPath}\n`);
 }
 
@@ -70,11 +79,120 @@ function loadAndValidate(charterPath: string): { charter: Charter; raw: string }
   return { charter: parsed as Charter, raw: text };
 }
 
+/** 수렴(대상 항목 전부 pass)했을 때만 0 — 조기 중단으로 pending 이 남으면 1. */
+function exitCode(sc: Scorecard): number {
+  return sc.passed === sc.total ? 0 : 1;
+}
+
+/** --report-only 출력: 무엇이 실행될지 보여주고 아무것도 실행/기록하지 않는다. */
+function printReport(
+  effective: Charter,
+  state: RunState,
+  repoDir: string,
+  findings: ReturnType<typeof scanCharter>,
+): void {
+  console.log(`\n=== loopspec report-only: ${effective.name} ===`);
+  console.log(`Goal:  ${effective.goal}`);
+  console.log(`Repo:  ${repoDir}`);
+  const caps = [
+    `iterations=${effective.budget.max_iterations}`,
+    `tokens=${effective.budget.max_tokens ?? "(none)"}`,
+    `usd=${effective.budget.max_budget_usd ?? "(none)"}`,
+    `attempts/item=${effective.budget.max_attempts_per_item}`,
+  ];
+  console.log(`Caps:  ${caps.join("  ")}`);
+  if (findings.length > 0) {
+    console.log(`Scan:`);
+    console.log(renderFindings(findings));
+  }
+  console.log(`Items:`);
+  for (const item of effective.items) {
+    const it = state.items.get(item.id) ?? { id: item.id, status: "pending" as const, attempts: 0 };
+    console.log(renderItemLine(it));
+  }
+  const next = pick(state, effective);
+  console.log(`Next:  ${next?.id ?? "(none)"}`);
+  const { stop, reason } = stopCheck(state, effective);
+  if (stop) console.log(`Stop:  would stop immediately (${reason})`);
+  console.log(`\n(report-only — nothing executed, nothing written)`);
+}
+
 export async function runCommand(charterPath: string, opts: RunOptions): Promise<number> {
   const { charter, raw } = loadAndValidate(charterPath);
 
-  // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
+  // 어댑터 해석 — 모르는 이름은 fail-closed
+  const adapter = opts.adapter ?? getAdapter(opts.agent ?? "claude-code");
+  if (!adapter) {
+    console.error(`✗ unknown agent "${opts.agent}". Known agents: ${knownAgents().join(", ")}.`);
+    return 1;
+  }
+
+  // 오버라이드 수집 — 검증은 전부 applyOverrides 의 errors 채널에서 (단일 fail-closed 경로)
+  const overrides: RunOverrides = {
+    maxIterations: opts.maxIter,
+    tokenBump: opts.tokenBump,
+    filterIds: opts.filter?.split(",").map((s) => s.trim()).filter(Boolean),
+  };
+
+  const repoDir = resolve(opts.repo);
+  const run_id = opts.resume ?? randomUUID();
+  const logPath = resolve(runsDir(), `${charter.name}-${run_id}.jsonl`);
+
+  // resume 면 기존 로그에서 prior state 파생 (+Nk/--max-iter 의 additive 기준점으로도 사용)
+  let prior: RunState | undefined;
+  if (opts.resume) {
+    const existing = readEntries(logPath);
+    if (existing.length === 0) {
+      console.error(`✗ no run-log to resume at ${logPath}`);
+      return 1;
+    }
+    prior = deriveState(existing);
+  }
+
+  const applied = applyOverrides(charter, overrides, {
+    tokens: prior?.tokensSpent ?? 0,
+    iterations: prior?.iterations ?? 0,
+  });
+  if (applied.errors.length > 0) {
+    console.error(`✗ invalid overrides:`);
+    for (const e of applied.errors) console.error(`  ${e}`);
+    return 1;
+  }
+  const effective = applied.charter;
+
+  // 대상(effective) 항목이 모두 terminal 인 완료 run 은 더 할 일이 없다.
+  // budget/iteration stop 으로 completed 된 run 은 non-terminal 항목이 남아 있으므로
+  // resume(+오버라이드 헤드룸) 가능.
+  if (prior && prior.status === "completed" && stopCheck(prior, effective).reason === "all-items-complete") {
+    console.log(`run ${run_id.slice(0, 8)} already completed.`);
+    const sc = buildScorecard(prior, effective);
+    printScorecard(sc, logPath);
+    return exitCode(sc);
+  }
+
   const findings = scanCharter(charter);
+
+  // report-only — 게이트/preflight/로그 이전에 계획만 출력하고 종료 (install --report-only 선례)
+  if (opts.reportOnly) {
+    printReport(effective, prior ?? deriveState([]), repoDir, findings);
+    return 0;
+  }
+
+  // resume 이 첫 stopCheck 에서 그대로 재중단될 상황이면 로그를 건드리기 전에 거부 —
+  // 아니면 run-resumed + run-completed 만 쌓이는 무진전 no-op 이 된다.
+  // (all-items-complete 는 예외: 크래시로 run-completed 가 안 남은 로그를 마저 종결해준다.)
+  if (prior) {
+    const preview: RunState = { ...prior, consecutiveFailures: 0 }; // run-resumed 가 리셋할 값 선반영
+    const { stop, reason } = stopCheck(preview, effective);
+    if (stop && reason !== "all-items-complete") {
+      console.error(`✗ resume would make no progress: ${reason}.`);
+      console.error(`  Raise the cap for this invocation (+Nk for tokens, --max-iter for iterations)`);
+      console.error(`  or adjust the charter budget (max_budget_usd cannot be raised from the CLI).`);
+      return 1;
+    }
+  }
+
+  // 신뢰 게이트 — 미동의 charter 의 danger 패턴은 preflight 전에 실행 거부(fail-closed).
   if (hasDanger(findings)) {
     const trusted = isConsented(process.cwd(), charterChecksum(raw));
     if (!trusted && !opts.yes) {
@@ -89,56 +207,42 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     console.log(renderFindings(findings));
   }
 
-  await preflight();
-  const repoDir = resolve(opts.repo);
-
-  const run_id = opts.resume ?? randomUUID();
-  const logPath = resolve(runsDir(), `${charter.name}-${run_id}.jsonl`);
-
-  if (opts.resume) {
-    const existing = readEntries(logPath);
-    if (existing.length === 0) {
-      console.error(`✗ no run-log to resume at ${logPath}`);
-      return 1;
-    }
-    const prior = deriveState(existing);
-    if (prior.status === "completed") {
-      console.log(`run ${run_id.slice(0, 8)} already completed.`);
-      const sc = buildScorecard(prior, charter);
-      printScorecard(sc, logPath);
-      return sc.escalated === 0 && sc.failed === 0 ? 0 : 1;
-    }
-  }
+  await adapter.preflight();
 
   console.log(`\n=== loopspec ${opts.resume ? "resume" : "run"}: ${charter.name} (${run_id.slice(0, 8)}) ===`);
   console.log(`Goal:  ${charter.goal}`);
+  console.log(`Agent: ${adapter.name}`);
   console.log(`Repo:  ${repoDir}`);
-  console.log(`Items: ${charter.items.map((i) => i.id).join(", ")}`);
+  console.log(`Items: ${effective.items.map((i) => i.id).join(", ")}`);
+  const overridesLine = describeOverrides(overrides, effective);
+  if (overridesLine) console.log(`Overrides: ${overridesLine}`);
   console.log(`Log:   ${logPath}\n`);
 
   if (opts.resume) {
     appendEntry(logPath, run_id, { type: "run-resumed" });
   } else {
+    // 실제 실행 대상(effective)을 기록해야 replay/stats 가 이 run 의 scope 와 일치한다.
+    // (필터를 넓혀 resume 하면 새 item 은 attempt 이벤트에서 lazy 하게 추적된다.)
     appendEntry(logPath, run_id, {
       type: "run-started",
       charter: charterPath,
       run_id,
-      items: charter.items.map((i) => i.id),
+      items: effective.items.map((i) => i.id),
     });
   }
   let state = deriveState(readEntries(logPath));
 
   while (true) {
-    const { stop, reason } = stopCheck(state, charter);
+    const { stop, reason } = stopCheck(state, effective);
     if (stop) {
       console.log(`-- stop: ${reason}`);
       break;
     }
 
-    const item = pick(state, charter);
+    const item = pick(state, effective);
     if (!item) break;
 
-    if (!attemptGuard(state, charter, item.id)) {
+    if (!attemptGuard(state, effective, item.id)) {
       console.log(`[${item.id}] max_attempts reached -> escalate`);
       appendEntry(logPath, run_id, { type: "item-escalated", item_id: item.id, reason: "max_attempts" });
       state = deriveState(readEntries(logPath));
@@ -152,11 +256,11 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     // step 시작 시점의 dirty 파일(이전 통과 아이템 변경분)을 baseline 으로 기록
     const before = await gitDiffNames(repoDir);
 
-    const prompt = buildStepPrompt(item, charter, state);
-    const result = await runStep({
+    const prompt = buildStepPrompt(item, effective, state);
+    const result = await adapter.runStep({
       prompt,
       allowedTools: ALLOWED_TOOLS,
-      disallowedTools: charter.denylist ?? [],
+      disallowedTools: effective.denylist ?? [],
       maxTurns: MAX_TURNS,
       cwd: repoDir,
     });
@@ -180,7 +284,7 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
       continue;
     }
 
-    const outcome = result.isError ? "fail" : await runVerify(charter.verify?.commands ?? [], repoDir);
+    const outcome = result.isError ? "fail" : await runVerify(effective.verify?.commands ?? [], repoDir);
     console.log(`[${item.id}] tools=[${result.toolCalls.join(",")}] outcome=${outcome}`);
     appendEntry(logPath, run_id, {
       type: "attempt-completed",
@@ -192,9 +296,9 @@ export async function runCommand(charterPath: string, opts: RunOptions): Promise
     state = deriveState(readEntries(logPath));
   }
 
-  const scorecard = buildScorecard(state, charter);
+  const scorecard = buildScorecard(state, effective);
   appendEntry(logPath, run_id, { type: "run-completed", scorecard });
   printScorecard(scorecard, logPath);
 
-  return scorecard.escalated === 0 && scorecard.failed === 0 ? 0 : 1;
+  return exitCode(scorecard);
 }
