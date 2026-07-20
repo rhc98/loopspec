@@ -1,0 +1,17 @@
+{
+  "name": "loopspec",
+  "owner": { "name": "rhc98" },
+  "metadata": {
+    "description": "Agent skill for the loopspec convergent sweep engine",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "loopspec",
+      "source": "./",
+      "description": "Vibe-loop skill: author, validate, run, and interpret loopspec charters.",
+      "strict": false,
+      "skills": ["./skills/loopspec"]
+    }
+  ]
+}
