@@ -40,6 +40,29 @@ loopspec --version
 loopspec init my-sweep   # 시작용 차터 스캐폴드
 ```
 
+## Agent skill (바이브 루프)
+
+Claude Code를 쓴다면 차터 포맷을 배울 필요가 없다. 함께 제공되는 agent skill을
+설치하고 하고 싶은 작업을 그냥 말로 설명하면 된다. 에이전트가 인터뷰하고, 차터를
+작성·검증하고, 비용이 들지 않는 미리보기를 보여주고, 예산을 쓰기 전에 확인을 받고,
+실행한 뒤 스코어카드를 해석해준다.
+
+```bash
+# 플러그인 마켓플레이스
+/plugin marketplace add rhc98/loopspec
+/plugin install loopspec@loopspec
+
+# 또는 skills CLI
+npx skills add rhc98/loopspec
+```
+
+설치 후에는 이렇게만 말하면 된다.
+
+> use loopspec to fix the type errors in src/
+
+PATH에 `loopspec` **0.2.0 이상**과 로그인된 `claude` CLI가 필요하다. 스킬이 토큰을
+쓰기 전에 둘 다 확인한다.
+
 ## 빠른 시작 (소스에서)
 
 아래는 저장소의 번들 fixture를 사용하므로 소스 체크아웃 기준입니다:
