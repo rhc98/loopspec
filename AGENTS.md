@@ -52,6 +52,7 @@ small, so the orchestrator — not the model — owns convergence and stopping.
 | `package.json` | npm scripts (`test`, `typecheck`, `fixtures:init`, `validate`, `run`, `spike`), deps, `bin` |
 | `LICENSE` | MIT license |
 | `README.md` / `README.en.md` | user-facing docs (Korean / English) |
+| `skills/loopspec/` | Claude Code agent skill — `SKILL.md` workflow + `references/` (charter schema, run-log/troubleshooting, seeds); shipped via `.claude-plugin/marketplace.json`, guarded by `src/__tests__/skill.test.ts` |
 | `scripts/init-fixtures.ts` | create/reset `fixtures/mini-repo` (`npm run fixtures:init`) |
 | `tsconfig.json` | ES2022 + NodeNext, strict; includes `spike/`, `src/`, `src/__tests__/` |
 | `src/cli/index.ts` | commander entry; `init` / `validate` / `status` / `stats` / `install` / `run` subcommands, exit codes |

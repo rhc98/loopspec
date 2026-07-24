@@ -45,6 +45,29 @@ loopspec --version
 loopspec init my-sweep   # scaffold a starter charter
 ```
 
+## Agent skill (vibe loop)
+
+If you use Claude Code, you do not have to learn the charter format. Install the
+bundled agent skill and describe the sweep in plain language — the agent
+interviews you, writes and validates the charter, shows you a free dry-run
+preview, asks before spending budget, runs, and interprets the scorecard.
+
+```bash
+# via the plugin marketplace
+/plugin marketplace add rhc98/loopspec
+/plugin install loopspec@loopspec
+
+# or via the skills CLI
+npx skills add rhc98/loopspec
+```
+
+Then just ask:
+
+> use loopspec to fix the type errors in src/
+
+Requires `loopspec` **≥ 0.2.0** on your PATH and a logged-in `claude` CLI. The
+skill checks both before it spends anything.
+
 ## Quick start (from source)
 
 The steps below use the repo's bundled fixtures, so they assume a source checkout:

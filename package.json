@@ -1,6 +1,6 @@
 {
   "name": "loopspec",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Convergent sweep engine for bounded, auditable LLM automation over a YAML charter",
   "keywords": [
     "cli",
@@ -29,7 +29,8 @@
     "dist",
     "README.en.md",
     "spec/loopspec-1.0.md",
-    "seeds"
+    "seeds",
+    "skills"
   ],
   "engines": {
     "node": ">=18"
